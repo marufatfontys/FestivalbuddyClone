@@ -4,11 +4,10 @@ import 'package:http/http.dart' as http;
 import '../models/festival_models.dart';
 
 class ApiService {
-  /// Paste your deployed Vercel URL here once deployed (e.g. 'https://festivalbuddy.vercel.app')
-  /// Or pass `--dart-define=API_URL=https://festivalbuddy.vercel.app` when building for iPhone.
+  /// Live Vercel REST API URL connected to Turso Cloud SQLite
   static const String cloudApiUrl = String.fromEnvironment(
     'API_URL',
-    defaultValue: 'http://145.93.72.104:3000',
+    defaultValue: 'https://festivalbuddy-seven.vercel.app',
   );
 
   // Configured dynamically:
