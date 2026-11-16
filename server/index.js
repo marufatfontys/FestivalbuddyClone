@@ -49,6 +49,12 @@ if (!process.env.VERCEL && fs.existsSync(uploadsDir)) {
   app.use('/uploads', express.static(uploadsDir));
 }
 
+// Serve the built Flutter Web Admin Panel static files from ../public
+const publicWebDir = path.join(__dirname, '..', 'public');
+if (fs.existsSync(publicWebDir)) {
+  app.use(express.static(publicWebDir));
+}
+
 // ============================================================================
 // UNIFIED SQLITE ADAPTER (Turso Cloud libSQL on Vercel OR Local SQLite3 on Mac)
 // ============================================================================

@@ -2,9 +2,9 @@
   "name": "festivalbuddy-cloud",
   "version": "1.0.0",
   "description": "Festival Buddy Web Admin & REST API (SQLite / Turso)",
-  "main": "api/index.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node server/index.js"
+    "start": "node index.js"
   },
   "dependencies": {
     "@libsql/client": "^0.14.0",
