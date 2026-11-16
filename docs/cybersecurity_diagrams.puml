@@ -1,0 +1,60 @@
+@startuml FestivalBuddy_RBAC_and_Security_Flow
+title Festival Buddy — Role-Based Access Control (RBAC) & Authentication Flow
+
+skinparam monochrome false
+skinparam shadowing false
+skinparam roundcorner 12
+
+actor "Guest Visitor" as Guest
+actor "Registered Visitor" as Visitor
+actor "Festival Organizer" as Organizer
+actor "Platform Admin" as Admin
+
+package "Public & Offline-Resilient Layer (No Auth Required)" {
+  usecase "Browse & Filter Festivals (SDG / Genre)" as UC_Browse
+  usecase "View Offline Venue Map (Water, First Aid, Quiet Zones)" as UC_Map
+  usecase "Save Local Offline Pins (Tent, Car, Bike, Meetup)" as UC_LocalPin
+}
+
+package "Authenticated Visitor Layer (Argon2id + 30m Timeout)" {
+  usecase "Sign Up (Requires Privacy Policy Consent)" as UC_SignUp
+  usecase "Login (5-Attempt 15m Lockout + New Device Alert)" as UC_Login
+  usecase "24h Single-Use Password Reset (Invalidates Sessions)" as UC_Reset
+  usecase "View Account-Bound SHA-256 QR Tickets Only" as UC_Tickets
+  usecase "Submit Anti-Greenwashing / Safety Report" as UC_Report
+  usecase "GDPR Center: View, Export JSON, Request Erasure (<=3 Clicks)" as UC_GDPR
+}
+
+package "Organizer Layer (RBAC: Organizer / Admin Only)" {
+  usecase "Sign Mandatory 9-Point SDG & Safety Agreement" as UC_Pledge
+  usecase "Create or Edit Festival Listing" as UC_CreateFest
+}
+
+package "Administrator Layer (RBAC: Admin Only)" {
+  usecase "Approve, Edit, or Remove Festival Listings (<5m SLA)" as UC_Approve
+  usecase "Verify & Resolve Visitor Greenwashing Reports" as UC_ReviewReport
+  usecase "Inspect Immutable Security Audit Log" as UC_AuditLog
+}
+
+Guest --> UC_Browse
+Guest --> UC_Map
+Guest --> UC_LocalPin
+Guest --> UC_SignUp
+Guest --> UC_Login
+
+Visitor --|> Guest
+Visitor --> UC_Tickets
+Visitor --> UC_Report
+Visitor --> UC_GDPR
+Visitor --> UC_Reset
+
+Organizer --|> Visitor
+Organizer --> UC_Pledge
+Organizer --> UC_CreateFest
+
+Admin --|> Organizer
+Admin --> UC_Approve
+Admin --> UC_ReviewReport
+Admin --> UC_AuditLog
+
+@enduml

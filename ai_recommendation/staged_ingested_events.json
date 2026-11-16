@@ -1,0 +1,70 @@
+[
+  {
+    "id": "fest_ai_solar_weekend_2027_roermo",
+    "name": "Solar Weekend 2027",
+    "tagline": "AI Verified Dutch Festival Announcement",
+    "category_label": "Electronic \u2022 Dutch Festival Circuit",
+    "dates": "01\u201304 Aug",
+    "city": "Roermond",
+    "venue_address": "Official Grounds, Roermond",
+    "price_eur": 89.0,
+    "genres": [
+      "Electronic & Techno"
+    ],
+    "organizer_name": "Extrema Network B.V. (KVK: 17148920)",
+    "source_url": "https://solarweekend.com/nl",
+    "is_approved_by_admin": false,
+    "is_ai_ingested": true,
+    "ai_verification_score": 0.98,
+    "ai_verification_report": "KVK match confirmed: Extrema Network B.V. (17148920) registered in Eindhoven. Valid TLS transport certificate verified for official domain 'solarweekend.com'. Verified social badge check: Instagram, Facebook, Tiktok verified. SDG eco commitments verified.",
+    "social_media_verification": {
+      "instagram": true,
+      "facebook": true,
+      "tiktok": true
+    },
+    "eco_commitments": {
+      "freeDrinkingWater": true,
+      "firstAidAndQuietZone": true,
+      "publicTransportIncluded": false,
+      "bicycleParking": false,
+      "reusableCupsOnly": true,
+      "renewableEnergy": true
+    },
+    "latitude": 51.205,
+    "longitude": 5.968
+  },
+  {
+    "id": "fest_ai_amsterdam_open_air_2027_g",
+    "name": "Amsterdam Open Air 2027",
+    "tagline": "AI Verified Dutch Festival Announcement",
+    "category_label": "Electronic \u2022 Dutch Festival Circuit",
+    "dates": "07\u201308 Jun",
+    "city": "Amsterdam",
+    "venue_address": "Official Grounds, Amsterdam",
+    "price_eur": 99.0,
+    "genres": [
+      "Electronic & Techno"
+    ],
+    "organizer_name": "AOA Live Events B.V. (KVK: 34382019)",
+    "source_url": "https://amsterdamopenair.nl",
+    "is_approved_by_admin": false,
+    "is_ai_ingested": true,
+    "ai_verification_score": 0.93,
+    "ai_verification_report": "KVK match confirmed: AOA Live Events B.V. (34382019) registered in Amsterdam. Valid TLS transport certificate verified for official domain 'amsterdamopenair.nl'. Verified social badge check: Instagram, Facebook verified. SDG eco commitments verified.",
+    "social_media_verification": {
+      "instagram": true,
+      "facebook": true,
+      "tiktok": false
+    },
+    "eco_commitments": {
+      "freeDrinkingWater": false,
+      "firstAidAndQuietZone": true,
+      "publicTransportIncluded": true,
+      "bicycleParking": true,
+      "reusableCupsOnly": true,
+      "renewableEnergy": true
+    },
+    "latitude": 52.309,
+    "longitude": 4.989
+  }
+]
