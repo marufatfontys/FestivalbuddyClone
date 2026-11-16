@@ -51,6 +51,7 @@ class AppState extends ChangeNotifier {
     _seedDefaultAccountsAndData();
     _seedSocialFriendsAndGroups();
     _loadPersistedState();
+    _startCloudSyncPolling();
   }
 
   Future<void> _loadPersistedState() async {
@@ -250,7 +251,7 @@ class AppState extends ChangeNotifier {
     } catch (_) {}
   }
 
-  Timer? _aiIngestionTimer;
+  Timer? _cloudSyncPollTimer;
 
   late List<Festival> _festivals;
   final Map<String, RegisteredAccount> _accounts = {};
@@ -1644,14 +1645,74 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void stopAiIngestionTimer() {
-    _aiIngestionTimer?.cancel();
-    _aiIngestionTimer = null;
+  void _startCloudSyncPolling() {
+    _cloudSyncPollTimer?.cancel();
+    _cloudSyncPollTimer = Timer.periodic(const Duration(seconds: 12), (_) async {
+      final wasApproved = isCurrentOrganizerApproved;
+      final pendingEventIds = _festivals
+          .where((f) => !f.isApprovedByAdmin)
+          .map((f) => f.id)
+          .toSet();
+
+      await refreshFromBackend();
+
+      // 1. Detect if current organizer account was just approved
+      if (isOrganizerAuthenticated && !wasApproved && isCurrentOrganizerApproved) {
+        addPushNotification(
+          title: '🎉 Organizer Account Approved!',
+          body: 'Your business profile ($organizerName) has been verified and approved by Admin. You can now publish live events!',
+          targetRole: 'organizer',
+        );
+        _savePersistedState();
+      }
+
+      // 2. Detect if an organizer account was rejected / deleted by admin
+      if (isOrganizerAuthenticated && !isCurrentOrganizerApproved) {
+        final match = _adminOrganizersQueue.firstWhere(
+          (o) => (o['email'] as String?)?.toLowerCase() == organizerEmail.toLowerCase(),
+          orElse: () => <String, dynamic>{},
+        );
+        if (match.isEmpty && _adminOrganizersQueue.isNotEmpty) {
+          // Record was removed from database (rejected)
+          addPushNotification(
+            title: '⚠️ Application Not Approved',
+            body: 'Your submission was reviewed and rejected by the admin team. You may review your business credentials and submit a new application.',
+            targetRole: 'organizer',
+          );
+          signOutToGuest();
+        }
+      }
+
+      // 3. Detect if any pending festivals were approved
+      for (final f in _festivals) {
+        if (pendingEventIds.contains(f.id) && f.isApprovedByAdmin) {
+          addPushNotification(
+            title: '🌟 Festival Approved & Live!',
+            body: 'Your event "${f.name}" has been approved by Admin and is now live on Discover!',
+            targetRole: 'organizer',
+            relatedFestivalId: f.id,
+          );
+          addPushNotification(
+            title: '🔥 New Festival Dropped: ${f.name}!',
+            body: '${f.name} in ${f.city} has just been announced on Festival Buddy!',
+            targetRole: 'visitor',
+            relatedFestivalId: f.id,
+          );
+        }
+      }
+    });
   }
+
+  void stopCloudSyncPolling() {
+    _cloudSyncPollTimer?.cancel();
+    _cloudSyncPollTimer = null;
+  }
+
+  void stopAiIngestionTimer() => stopCloudSyncPolling();
 
   @override
   void dispose() {
-    _aiIngestionTimer?.cancel();
+    _cloudSyncPollTimer?.cancel();
     super.dispose();
   }
 
