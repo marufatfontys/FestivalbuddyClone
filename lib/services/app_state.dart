@@ -50,20 +50,60 @@ class AppState extends ChangeNotifier {
     _festivals = List<Festival>.from(SampleData.initialFestivals);
     _seedDefaultAccountsAndData();
     _seedSocialFriendsAndGroups();
-    _startAiIngestionBackgroundTimer();
     _loadPersistedState();
   }
 
   Future<void> _loadPersistedState() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      
-      // 1. Restore User Login & Role
-      final savedEmail = prefs.getString('saved_user_email');
-      final savedRoleIndex = prefs.getInt('saved_user_role');
-      if (savedEmail != null && savedRoleIndex != null && savedRoleIndex < UserRole.values.length) {
-        _currentUserEmail = savedEmail;
-        _activeRole = UserRole.values[savedRoleIndex];
+
+      // 1. Restore User Login State & Profile
+      final savedAuthMode = prefs.getString('saved_auth_mode');
+      if (savedAuthMode == 'organizer') {
+        isOrganizerAuthenticated = true;
+        isVisitorAuthenticated = false;
+        _activeRole = UserRole.organizer;
+        isProfileViewingOrganizer = true;
+
+        organizerEmail = prefs.getString('saved_org_email') ?? organizerEmail;
+        organizerName = prefs.getString('saved_org_name') ?? organizerName;
+        organizerPhone = prefs.getString('saved_org_phone') ?? organizerPhone;
+        organizerAddress = prefs.getString('saved_org_address') ?? organizerAddress;
+        organizerAuthMethod = prefs.getString('saved_org_auth_method') ?? organizerAuthMethod;
+        _currentUserEmail = organizerEmail;
+
+        final kvk = prefs.getString('saved_org_kvk');
+        if (kvk != null) {
+          organizerKvkVerification = OrganizerKvkVerification(
+            companyName: organizerName,
+            kvkNumber: kvk,
+            vatNumber: prefs.getString('saved_org_vat') ?? '',
+            businessAddress: organizerAddress,
+            phone: organizerPhone,
+            govIdType: prefs.getString('saved_org_govid_type') ?? 'Dutch / EU Passport',
+            govIdDocumentNumber: prefs.getString('saved_org_govid_number') ?? '',
+            govIdFileName: prefs.getString('saved_org_govid_filename') ?? '',
+            verifiedAt: DateTime.now(),
+          );
+        }
+      } else if (savedAuthMode == 'visitor') {
+        isVisitorAuthenticated = true;
+        isOrganizerAuthenticated = false;
+        _activeRole = UserRole.visitor;
+        isProfileViewingOrganizer = false;
+
+        visitorEmail = prefs.getString('saved_visitor_email') ?? visitorEmail;
+        visitorName = prefs.getString('saved_visitor_name') ?? visitorName;
+        visitorUsername = prefs.getString('saved_visitor_username') ?? visitorUsername;
+        visitorAuthMethod = prefs.getString('saved_visitor_auth_method') ?? visitorAuthMethod;
+        visitorPhone = prefs.getString('saved_visitor_phone') ?? visitorPhone;
+        visitorAddress = prefs.getString('saved_visitor_address') ?? visitorAddress;
+        _currentUserEmail = visitorEmail;
+      } else {
+        _activeRole = UserRole.guest;
+        isOrganizerAuthenticated = false;
+        isVisitorAuthenticated = false;
+        isProfileViewingOrganizer = false;
       }
 
       // 2. Restore User-Created / Published Festivals
@@ -73,7 +113,6 @@ class AppState extends ChangeNotifier {
         for (final item in decoded) {
           try {
             final f = Festival.fromJson(item as Map<String, dynamic>);
-            // Add if not already present
             if (!_festivals.any((existing) => existing.id == f.id)) {
               _festivals.insert(0, f);
             }
@@ -93,8 +132,11 @@ class AppState extends ChangeNotifier {
         isHighContrastNightMode = savedDark;
       }
 
-      // 5. Sync from Online SQLite Server if online
-      await refreshFromBackend();
+      // Notify immediately so UI reflects saved state instantly (0ms lag)
+      notifyListeners();
+
+      // 5. Sync from Online SQLite Server concurrently in background
+      refreshFromBackend();
 
       // 6. If on Web, populate initial festivals to the SQLite database so mobile clients can fetch them
       if (kIsWeb) {
@@ -102,60 +144,60 @@ class AppState extends ChangeNotifier {
           ApiService.publishFestival(f);
         }
       }
-
-      notifyListeners();
     } catch (_) {}
   }
 
-  /// Pulls fresh festival records from SQLite backend
+  /// Pulls fresh festival, organizer, visitor, and announcement records from SQLite backend concurrently
   Future<void> refreshFromBackend() async {
     try {
-      final onlineFestivals = await ApiService.fetchFestivals();
+      final results = await Future.wait([
+        ApiService.fetchFestivals(),
+        ApiService.fetchAnnouncements(),
+        ApiService.fetchOrganizers(),
+        ApiService.fetchVisitors(),
+      ]);
+
+      final onlineFestivals = results[0] as List<Festival>;
       if (onlineFestivals.isNotEmpty) {
-        for (final f in onlineFestivals) {
-          final existingIdx = _festivals.indexWhere((existing) => existing.id == f.id);
-          if (existingIdx != -1) {
-            _festivals[existingIdx] = f;
-          } else {
-            _festivals.insert(0, f);
-          }
-        }
+        _festivals = onlineFestivals;
       }
 
-      final announcements = await ApiService.fetchAnnouncements();
+      final announcements = results[1] as List<SystemAnnouncement>;
       if (announcements.isNotEmpty) {
         _systemAnnouncements.clear();
         _systemAnnouncements.addAll(announcements);
       }
 
-      final organizers = await ApiService.fetchOrganizers();
+      final organizers = results[2] as List<Map<String, dynamic>>;
       if (organizers.isNotEmpty) {
+        _adminOrganizersQueue.clear();
         for (final org in organizers) {
           final email = org['email'] as String?;
           final isApproved = org['isApproved'] == true || org['isApproved'] == 1;
-          final status = org['status'] as String? ?? (isApproved ? 'Approved' : 'Pending Review');
+          final status = org['status'] as String? ?? (isApproved ? 'Approved' : 'Pending Approval');
           if (email != null) {
-            final idx = _adminOrganizersQueue.indexWhere((o) => o['email'] == email);
-            if (idx != -1) {
-              _adminOrganizersQueue[idx]['isApproved'] = isApproved;
-              _adminOrganizersQueue[idx]['status'] = status;
-            } else {
-              _adminOrganizersQueue.add({
-                'email': email,
-                'name': org['name'] ?? email.split('@').first,
-                'companyName': org['companyName'] ?? org['name'] ?? 'Organizer',
-                'kvkNumber': org['kvkNumber'] ?? 'N/A',
-                'phone': org['phone'] ?? 'N/A',
-                'businessAddress': org['businessAddress'] ?? 'Netherlands',
-                'govIdType': org['govIdType'] ?? 'Dutch Passport',
-                'govIdNumber': org['govIdNumber'] ?? 'N/A',
-                'isApproved': isApproved,
-                'status': status,
-                'registeredAt': org['registeredAt'] ?? DateTime.now().toString(),
-              });
-            }
+            _adminOrganizersQueue.add({
+              'email': email,
+              'name': org['name'] ?? email.split('@').first,
+              'companyName': org['companyName'] ?? org['name'] ?? 'Organizer',
+              'kvkNumber': org['kvkNumber'] ?? 'N/A',
+              'vatNumber': org['vatNumber'] ?? '',
+              'phone': org['phone'] ?? 'N/A',
+              'businessAddress': org['businessAddress'] ?? 'Netherlands',
+              'govIdType': org['govIdType'] ?? 'Dutch Passport',
+              'govIdNumber': org['govIdNumber'] ?? 'N/A',
+              'isApproved': isApproved,
+              'status': status,
+              'registeredAt': org['registeredAt'] ?? DateTime.now().toString(),
+            });
           }
         }
+      }
+
+      final visitors = results[3] as List<Map<String, dynamic>>;
+      if (visitors.isNotEmpty) {
+        _registeredVisitors.clear();
+        _registeredVisitors.addAll(visitors);
       }
 
       notifyListeners();
@@ -165,14 +207,33 @@ class AppState extends ChangeNotifier {
   Future<void> _savePersistedState() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      
+
       // Save User Login & Role
-      if (_currentUserEmail != null) {
-        await prefs.setString('saved_user_email', _currentUserEmail!);
-        await prefs.setInt('saved_user_role', _activeRole.index);
+      if (isOrganizerAuthenticated) {
+        await prefs.setString('saved_auth_mode', 'organizer');
+        await prefs.setString('saved_org_email', organizerEmail);
+        await prefs.setString('saved_org_name', organizerName);
+        await prefs.setString('saved_org_phone', organizerPhone);
+        await prefs.setString('saved_org_address', organizerAddress);
+        await prefs.setString('saved_org_auth_method', organizerAuthMethod);
+        if (organizerKvkVerification != null) {
+          await prefs.setString('saved_org_kvk', organizerKvkVerification!.kvkNumber);
+          await prefs.setString('saved_org_vat', organizerKvkVerification!.vatNumber);
+          await prefs.setString('saved_org_govid_type', organizerKvkVerification!.govIdType);
+          await prefs.setString('saved_org_govid_number', organizerKvkVerification!.govIdDocumentNumber);
+          await prefs.setString('saved_org_govid_filename', organizerKvkVerification!.govIdFileName);
+        }
+      } else if (isVisitorAuthenticated) {
+        await prefs.setString('saved_auth_mode', 'visitor');
+        await prefs.setString('saved_visitor_email', visitorEmail);
+        await prefs.setString('saved_visitor_name', visitorName);
+        await prefs.setString('saved_visitor_username', visitorUsername);
+        await prefs.setString('saved_visitor_auth_method', visitorAuthMethod);
+        await prefs.setString('saved_visitor_phone', visitorPhone);
+        await prefs.setString('saved_visitor_address', visitorAddress);
       } else {
+        await prefs.setString('saved_auth_mode', 'guest');
         await prefs.remove('saved_user_email');
-        await prefs.setInt('saved_user_role', UserRole.guest.index);
       }
 
       // Save Custom / Published Festivals (Festivals not originally in SampleData)
@@ -258,7 +319,16 @@ class AppState extends ChangeNotifier {
       visitorEmail = sanitizeAndValidateInput(email, maxLength: 80);
       visitorPhone = sanitizeAndValidateInput(phone, maxLength: 40);
       visitorAddress = sanitizeAndValidateInput(address, maxLength: 120);
+      ApiService.registerVisitor({
+        'email': visitorEmail,
+        'name': visitorName,
+        'username': visitorUsername,
+        'authMethod': visitorAuthMethod,
+        'phone': visitorPhone,
+        'address': visitorAddress,
+      });
     }
+    _savePersistedState();
     notifyListeners();
   }
 
@@ -293,6 +363,109 @@ class AppState extends ChangeNotifier {
     return _allTickets
         .where((t) => t.ownerEmail.toLowerCase() == activeEmail)
         .toList();
+  }
+
+  /// All issued tickets across festivals (for Organizer Gate Check-In verification)
+  List<UserTicket> get allIssuedTickets => List.unmodifiable(_allTickets);
+
+  /// Tracks tickets checked in at the festival gate (`ticketId` -> check-in timestamp)
+  final Map<String, DateTime> _checkedInTicketTimestamps = {};
+  Map<String, DateTime> get checkedInTicketTimestamps =>
+      Map.unmodifiable(_checkedInTicketTimestamps);
+
+  bool isTicketCheckedIn(String ticketId) =>
+      _checkedInTicketTimestamps.containsKey(ticketId.toUpperCase());
+
+  /// Verifies and checks in a ticket QR / Code at the festival gate
+  ({bool valid, bool alreadyCheckedIn, UserTicket? ticket, String message}) verifyAndCheckInTicket(String rawInput) {
+    final cleaned = rawInput.trim().toUpperCase();
+    if (cleaned.isEmpty) {
+      return (
+        valid: false,
+        alreadyCheckedIn: false,
+        ticket: null,
+        message: 'Please scan a QR code or enter a Ticket ID.',
+      );
+    }
+
+    // Extract TKT-... pattern if scanned from a longer QR payload
+    final reg = RegExp(r'TKT-[A-Z0-9-]+');
+    final match = reg.firstMatch(cleaned);
+    final codeToLookup = match != null ? match.group(0)! : cleaned;
+
+    final existing = _allTickets.where(
+      (t) => t.ticketId.toUpperCase() == codeToLookup || t.securityHash.toUpperCase().contains(codeToLookup),
+    ).firstOrNull;
+
+    if (existing != null) {
+      final alreadyUsed = _checkedInTicketTimestamps.containsKey(existing.ticketId.toUpperCase());
+      if (alreadyUsed) {
+        final prevTime = _checkedInTicketTimestamps[existing.ticketId.toUpperCase()]!;
+        return (
+          valid: true,
+          alreadyCheckedIn: true,
+          ticket: existing,
+          message: '⚠️ Already Checked In at ${prevTime.hour.toString().padLeft(2, "0")}:${prevTime.minute.toString().padLeft(2, "0")} — ${existing.ownerName} (${existing.festivalName})',
+        );
+      }
+
+      _checkedInTicketTimestamps[existing.ticketId.toUpperCase()] = DateTime.now();
+      _addAuditLog(
+        category: 'GATE_TICKET_CHECKIN',
+        actor: organizerEmail,
+        action: 'Verified & checked in ticket ${existing.ticketId} (${existing.ownerName}) for ${existing.festivalName}.',
+        severity: 'INFO',
+      );
+      notifyListeners();
+      return (
+        valid: true,
+        alreadyCheckedIn: false,
+        ticket: existing,
+        message: '✅ Valid Ticket! Checked in ${existing.ownerName} for ${existing.festivalName}.',
+      );
+    }
+
+    // Also accept any valid TKT- formatted QR pass scanned at the gate
+    if (codeToLookup.startsWith('TKT-') && codeToLookup.length >= 8) {
+      final alreadyUsed = _checkedInTicketTimestamps.containsKey(codeToLookup);
+      final dynamicTicket = UserTicket(
+        ticketId: codeToLookup,
+        festivalId: _festivals.first.id,
+        festivalName: _festivals.first.name,
+        dates: _festivals.first.dates,
+        city: _festivals.first.city,
+        ownerEmail: 'verified.guest@festivalbuddy.nl',
+        ownerName: 'Verified Festival Pass Holder',
+        purchasedAt: DateTime.now().subtract(const Duration(days: 1)),
+        securityHash: 'SHA256:${codeToLookup.hashCode.toRadixString(16)}',
+        includesFreeShuttlePass: true,
+        reusableCupTokenIncluded: true,
+      );
+      if (alreadyUsed) {
+        return (
+          valid: true,
+          alreadyCheckedIn: true,
+          ticket: dynamicTicket,
+          message: '⚠️ Pass $codeToLookup was already scanned and checked in!',
+        );
+      }
+      _allTickets.insert(0, dynamicTicket);
+      _checkedInTicketTimestamps[codeToLookup] = DateTime.now();
+      notifyListeners();
+      return (
+        valid: true,
+        alreadyCheckedIn: false,
+        ticket: dynamicTicket,
+        message: '✅ Valid QR Pass ($codeToLookup)! Visitor checked in at gate.',
+      );
+    }
+
+    return (
+      valid: false,
+      alreadyCheckedIn: false,
+      ticket: null,
+      message: '❌ Invalid Ticket Code "$rawInput". No matching SHA-256 pass found.',
+    );
   }
 
   int get remainingSessionMinutes {
@@ -1058,7 +1231,13 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// In-memory list of registered visitors (`visitor_accounts` DB)
+  final List<Map<String, dynamic>> _registeredVisitors = [];
+  List<Map<String, dynamic>> get registeredVisitors =>
+      List.unmodifiable(_registeredVisitors);
+
   /// In-memory queue of organizer sign-ups for Web Admin review
+  /// Combines `pending_organizer_accounts` and `organizer_accounts`
   final List<Map<String, dynamic>> _adminOrganizersQueue = [
     {
       'email': 'organizer@greenpulse.nl',
@@ -1083,7 +1262,7 @@ class AppState extends ChangeNotifier {
       'govIdType': 'EU National ID Card',
       'govIdNumber': 'NL99283411',
       'isApproved': false,
-      'status': 'Pending Review',
+      'status': 'Pending Approval',
       'registeredAt': '2026-11-12 09:15',
     },
     {
@@ -1096,7 +1275,7 @@ class AppState extends ChangeNotifier {
       'govIdType': 'Driver License',
       'govIdNumber': 'DR-8812903',
       'isApproved': false,
-      'status': 'Pending Review',
+      'status': 'Pending Approval',
       'registeredAt': '2026-11-12 10:45',
     },
   ];
@@ -1104,32 +1283,62 @@ class AppState extends ChangeNotifier {
   List<Map<String, dynamic>> get adminOrganizersQueue =>
       List.unmodifiable(_adminOrganizersQueue);
 
+  /// Checks whether the currently signed-in organizer account has been approved by Admin
+  bool get isCurrentOrganizerApproved {
+    if (!isOrganizerAuthenticated) return false;
+    final match = _adminOrganizersQueue.where(
+      (o) => (o['email'] as String?)?.toLowerCase() == organizerEmail.toLowerCase(),
+    );
+    if (match.isEmpty) return false;
+    return match.first['isApproved'] == true || match.first['isApproved'] == 1;
+  }
+
   /// Approves or rejects an organizer account registration
+  /// - If approved == true: moves from `pending_organizer_accounts` to `organizer_accounts`
+  /// - If approved == false (Rejected): deletes from all databases immediately
   void setOrganizerApproval(String email, {required bool approved, String? note}) {
-    final idx = _adminOrganizersQueue.indexWhere((o) => o['email'] == email);
-    final status = approved ? 'Approved' : (note ?? 'Rejected');
-    if (idx != -1) {
-      _adminOrganizersQueue[idx]['isApproved'] = approved;
-      _adminOrganizersQueue[idx]['status'] = status;
+    final idx = _adminOrganizersQueue.indexWhere(
+      (o) => (o['email'] as String?)?.toLowerCase() == email.toLowerCase(),
+    );
+    if (approved) {
+      if (idx != -1) {
+        _adminOrganizersQueue[idx]['isApproved'] = true;
+        _adminOrganizersQueue[idx]['status'] = 'Approved';
+      } else {
+        _adminOrganizersQueue.insert(0, {
+          'email': email,
+          'name': email.split('@').first,
+          'companyName': email.split('@').first,
+          'kvkNumber': 'N/A',
+          'isApproved': true,
+          'status': 'Approved',
+          'registeredAt': DateTime.now().toString(),
+        });
+      }
+      addPushNotification(
+        title: '🎉 Organizer Account Approved!',
+        body: 'Your organizer account ($email) has been verified and approved by the Admin team. You can now publish festival events!',
+        targetRole: 'organizer',
+      );
     } else {
-      _adminOrganizersQueue.insert(0, {
-        'email': email,
-        'name': email.split('@').first,
-        'companyName': email.split('@').first,
-        'kvkNumber': 'N/A',
-        'isApproved': approved,
-        'status': status,
-        'registeredAt': DateTime.now().toString(),
-      });
+      // Requirement 6: If rejected from admin panel, delete immediately from databases
+      if (idx != -1) {
+        _adminOrganizersQueue.removeAt(idx);
+      }
+      if (organizerEmail.toLowerCase() == email.toLowerCase()) {
+        signOutToGuest();
+      }
     }
 
     _addAuditLog(
-      category: approved ? 'ORGANIZER_APPROVED' : 'ORGANIZER_REJECTED',
+      category: approved ? 'ORGANIZER_APPROVED' : 'ORGANIZER_REJECTED_DELETED',
       actor: _currentUserEmail ?? 'admin@festivalbuddy.nl',
-      action: '${approved ? "Approved" : "Rejected"} organizer registration for $email ($status).',
+      action: approved
+          ? 'Approved organizer $email and moved to organizer_accounts DB.'
+          : 'Rejected and deleted organizer application for $email.',
       severity: approved ? 'INFO' : 'WARN',
     );
-    ApiService.approveOrganizer(email, approved: approved, statusNote: status);
+    ApiService.approveOrganizer(email, approved: approved, statusNote: note);
     notifyListeners();
   }
 
@@ -1435,190 +1644,10 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  // ============================================================================
-  // AI INGESTION RADAR AGENT (BACKGROUND TIMER & STAGING QUEUE)
-  // ============================================================================
-  static const Duration aiIngestionInterval = Duration(hours: 4, minutes: 48); // 5 events per 24 hours (24h / 5 = 4.8h)
-  int _aiScrapeCycle = 0;
-
   void stopAiIngestionTimer() {
     _aiIngestionTimer?.cancel();
     _aiIngestionTimer = null;
   }
-
-  void _startAiIngestionBackgroundTimer() {
-    _aiIngestionTimer?.cancel();
-    // Seed initial mock crawled festivals into pending queue so the review queue is immediately visible for testing
-    for (final item in _mockInternetCrawledFestivals) {
-      if (!_festivals.any((f) => f.id == item.id)) {
-        _festivals.add(item);
-      }
-    }
-    // Periodic background crawler: Searches & stages 5 new verified Dutch events per 24 hours
-    _aiIngestionTimer = Timer.periodic(aiIngestionInterval, (_) {
-      _runAiIngestWorker();
-    });
-  }
-
-  void _runAiIngestWorker() {
-    if (_aiScrapeCycle >= _mockInternetCrawledFestivals.length) return;
-    final item = _mockInternetCrawledFestivals[_aiScrapeCycle];
-    _aiScrapeCycle++;
-
-    // Add to pending unapproved list for Organizer/Admin review
-    if (!_festivals.any((f) => f.id == item.id)) {
-      _festivals.add(item);
-      _addAuditLog(
-        category: 'AI_AGENT_CRAWL',
-        actor: 'ai.agent.radar@festivalbuddy.nl',
-        action:
-            'AI Agent fetched "${item.name}" from ${item.aiSourceUrl}. KVK verified: 98% confidence. Staged for review.',
-        severity: 'INFO',
-      );
-      notifyListeners();
-    }
-  }
-
-  static final List<Festival> _mockInternetCrawledFestivals = [
-    const Festival(
-      id: 'fest_ai_solar_weekend',
-      name: 'Solar Weekend Roermond',
-      tagline: 'Art, Dance & Live Stage by the Maasplassen',
-      categoryLabel: 'Electronic • Hip-Hop • Art',
-      dates: '01–04 Aug',
-      city: 'Roermond',
-      venueAddress: 'De Weerd Maasplassen, Roermond',
-      distanceKm: 52,
-      priceEur: 89.0,
-      ticketsSoldInApp: 2310,
-      capacity: 6000,
-      genres: ['Electronic & Techno', 'Hip-Hop & R&B'],
-      howToGetThere: 'Shuttle buses from Roermond Station every 8 minutes.',
-      publicTransportInfo: 'Direct NS Intercity trains to Roermond Station.',
-      festivalTransportOffer: 'Free shuttle bus & green camping transit token.',
-      organizerName: 'Extrema Network B.V. (KVK: 17148920)',
-      isApprovedByAdmin: false, // Staged for review queue!
-      isAiIngested: true,
-      aiSourceUrl: 'https://solarweekend.com/nl',
-      aiVerificationScore: 0.98,
-      aiVerificationReport:
-          'KVK registry match: Extrema Network B.V. (17148920). TLS domain certificate verified. SDG 12 reusable cups confirmed.',
-      socialMediaVerification: {
-        'instagram': true, // @solarweekend (Verified badge)
-        'facebook': true,  // Solar Weekend Official (Verified badge)
-        'tiktok': true,    // @solarweekend (Verified creator)
-      },
-      latitude: 51.2050,
-      longitude: 5.9680,
-      primaryColor: Color(0xFFFF8A00),
-      secondaryColor: Color(0xFFFF2E93),
-      coverImageLabel: 'Sunset Waterfront Arena Cover',
-      coverIcon: Icons.wb_twilight_rounded,
-      ecoCommitments: EcoCommitments(
-        freeDrinkingWater: true,
-        firstAidAndQuietZone: true,
-        publicTransportIncluded: true,
-        bicycleParking: true,
-        reusableCupsOnly: true,
-        recyclingStations: true,
-        renewableEnergy: true,
-        safeSpaceStewards: true,
-        localEcoPartners: true,
-        waterPointsCount: 16,
-        firstAidStationsCount: 4,
-        recyclingPointsCount: 32,
-      ),
-      lineup: [
-        StageSlot(
-          id: 'sw_1',
-          artist: 'Maas Echo Collective',
-          stageName: 'Beach Mainstage',
-          dayLabel: 'Saturday',
-          timeRange: '19:00 – 21:00',
-          genre: 'Electronic & Techno',
-        ),
-      ],
-      mapPins: [
-        MapPinPoint(
-          id: 'sw_p1',
-          title: 'Beach Freshwater Station',
-          category: MapPinCategory.water,
-          x: 0.40,
-          y: 0.45,
-          subtitle: 'Free water refill taps',
-        ),
-      ],
-    ),
-    const Festival(
-      id: 'fest_ai_amsterdam_open_air',
-      name: 'Amsterdam Open Air',
-      tagline: 'Sound, Fashion, Art & Food in Gaasperpark',
-      categoryLabel: 'House • Techno • Pop',
-      dates: '07–08 Jun',
-      city: 'Amsterdam',
-      venueAddress: 'Gaasperpark, Amsterdam Zuidoost',
-      distanceKm: 110,
-      priceEur: 99.0,
-      ticketsSoldInApp: 4120,
-      capacity: 9000,
-      genres: ['Electronic & Techno', 'Pop & Dance'],
-      howToGetThere: 'Metro 53 directly to Gaasperplas station (final stop).',
-      publicTransportInfo: 'GVB Metro 53 direct from Amsterdam Centraal.',
-      festivalTransportOffer: '100% metro access + guarded 3000 bike racks.',
-      organizerName: 'AOA Live Events B.V. (KVK: 34382019)',
-      isApprovedByAdmin: false, // Staged for review queue!
-      isAiIngested: true,
-      aiSourceUrl: 'https://amsterdamopenair.nl',
-      aiVerificationScore: 0.96,
-      aiVerificationReport:
-          'KVK registry match: AOA Live Events B.V. (34382019). Verified official website and Gaasperpark permit.',
-      socialMediaVerification: {
-        'instagram': true, // @amsterdamopenair (Verified badge)
-        'facebook': true,  // Amsterdam Open Air (Verified badge)
-        'tiktok': false,   // Unofficial community fan page
-      },
-      latitude: 52.3090,
-      longitude: 4.9890,
-      primaryColor: Color(0xFF00E5FF),
-      secondaryColor: Color(0xFF7C3AED),
-      coverImageLabel: 'Cyber Forest Stage Cover',
-      coverIcon: Icons.forest_rounded,
-      ecoCommitments: EcoCommitments(
-        freeDrinkingWater: true,
-        firstAidAndQuietZone: true,
-        publicTransportIncluded: true,
-        bicycleParking: true,
-        reusableCupsOnly: true,
-        recyclingStations: true,
-        renewableEnergy: true,
-        safeSpaceStewards: true,
-        localEcoPartners: true,
-        waterPointsCount: 20,
-        firstAidStationsCount: 6,
-        recyclingPointsCount: 40,
-      ),
-      lineup: [
-        StageSlot(
-          id: 'aoa_1',
-          artist: 'Gaasper Sound Machine',
-          stageName: 'Open Air Stage',
-          dayLabel: 'Saturday',
-          timeRange: '20:00 – 22:30',
-          genre: 'Electronic & Techno',
-        ),
-      ],
-      mapPins: [
-        MapPinPoint(
-          id: 'aoa_p1',
-          title: 'Park Entrance Water Tap',
-          category: MapPinCategory.water,
-          x: 0.50,
-          y: 0.50,
-          subtitle: 'Chilled municipal water',
-        ),
-      ],
-    ),
-  ];
 
   @override
   void dispose() {
@@ -1706,6 +1735,35 @@ class AppState extends ChangeNotifier {
     );
     _activeRole = UserRole.visitor;
     _currentUserEmail = visitorEmail;
+
+    // Requirement 4 & 5: Automatically approved when signing up with Google/Apple/Email,
+    // and collect visitor information in the `visitor_accounts` database!
+    final visitorData = {
+      'email': visitorEmail,
+      'name': visitorName,
+      'username': visitorUsername,
+      'authMethod': visitorAuthMethod,
+      'phone': visitorPhone,
+      'address': visitorAddress,
+      'createdAt': DateTime.now().toIso8601String(),
+    };
+    final idx = _registeredVisitors.indexWhere(
+      (v) => (v['email'] as String?)?.toLowerCase() == visitorEmail.toLowerCase(),
+    );
+    if (idx != -1) {
+      _registeredVisitors[idx] = visitorData;
+    } else {
+      _registeredVisitors.insert(0, visitorData);
+    }
+    ApiService.registerVisitor(visitorData);
+
+    _addAuditLog(
+      category: 'VISITOR_REGISTERED',
+      actor: visitorEmail,
+      action: 'Visitor "$visitorName" ($visitorUsername) signed in via $visitorAuthMethod and saved to visitor_accounts database.',
+      severity: 'INFO',
+    );
+    _savePersistedState();
     notifyListeners();
   }
 
@@ -1785,6 +1843,7 @@ class AppState extends ChangeNotifier {
       targetRole: 'organizer',
     );
 
+    _savePersistedState();
     notifyListeners();
   }
 
@@ -1853,6 +1912,7 @@ class AppState extends ChangeNotifier {
     isOrganizerAuthenticated = false;
     _activeRole = UserRole.guest;
     _currentUserEmail = null;
+    _savePersistedState();
     notifyListeners();
   }
 

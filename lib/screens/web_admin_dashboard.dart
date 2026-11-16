@@ -334,7 +334,7 @@ class _WebAdminDashboardScreenState extends State<WebAdminDashboardScreen> {
                             const Icon(Icons.verified_rounded, color: Color(0xFF10B981), size: 20),
                             const SizedBox(width: 8),
                             Text(
-                              'Staged AI / New Listings ($pendingFestivals)',
+                              'Pending Event Approvals ($pendingFestivals)',
                               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                             ),
                           ],
@@ -878,27 +878,27 @@ class _WebAdminDashboardScreenState extends State<WebAdminDashboardScreen> {
                                   foregroundColor: Colors.redAccent,
                                   visualDensity: VisualDensity.compact,
                                 ),
-                                icon: const Icon(Icons.close_rounded, size: 16),
-                                label: const Text('Reject'),
+                                icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                                label: const Text('Reject & Delete'),
                                 onPressed: () {
-                                  widget.appState.setOrganizerApproval(email, approved: false, note: 'Rejected: Incomplete Documentation');
+                                  widget.appState.setOrganizerApproval(email, approved: false, note: 'Rejected and Deleted');
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Rejected application for $email.')),
+                                    SnackBar(content: Text('Rejected and deleted application for $email.')),
                                   );
                                 },
                               ),
                             ] else ...[
                               OutlinedButton.icon(
                                 style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.amber,
+                                  foregroundColor: Colors.redAccent,
                                   visualDensity: VisualDensity.compact,
                                 ),
-                                icon: const Icon(Icons.undo_rounded, size: 16),
-                                label: const Text('Revoke Approval'),
+                                icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                                label: const Text('Delete Account'),
                                 onPressed: () {
-                                  widget.appState.setOrganizerApproval(email, approved: false, note: 'Suspended by Admin');
+                                  widget.appState.setOrganizerApproval(email, approved: false, note: 'Account Deleted by Admin');
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Approval revoked for $company.')),
+                                    SnackBar(content: Text('Deleted organizer account for $company.')),
                                   );
                                 },
                               ),

@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../models/festival_models.dart';
 import '../services/app_state.dart';
 import '../services/sample_data.dart';
@@ -1379,9 +1378,9 @@ class _ProfileSecurityScreenState extends State<ProfileSecurityScreen> {
                       govIdFileName: _uploadedGovIdFileName!,
                     );
                   },
-                  icon: const Icon(Icons.verified_rounded),
+                  icon: const Icon(Icons.send_rounded),
                   label: const Text(
-                    'Verify Identity & Activate Organizer Account',
+                    'Submit Organizer Application for Admin Approval',
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),
@@ -1392,44 +1391,116 @@ class _ProfileSecurityScreenState extends State<ProfileSecurityScreen> {
       );
     }
 
-    // Verified Organizer Profile & Publish Event View
+    // Signed-in Organizer Profile & Publish Event View
     final kvk = appState.organizerKvkVerification;
+    final isAccountApproved = appState.isCurrentOrganizerApproved;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildProfileBanner(
           title: appState.organizerName,
-          subtitle:
-              'KVK: ${kvk?.kvkNumber ?? "84920174"} • Govt. ID Verified ✓',
-          badge: 'KVK & GOVT ID VERIFIED ORGANIZER',
-          icon: Icons.stadium_rounded,
+          subtitle: isAccountApproved
+              ? 'KVK: ${kvk?.kvkNumber ?? "84920174"} • Approved by Admin ✓'
+              : 'KVK: ${kvk?.kvkNumber ?? "84920174"} • Awaiting Admin Verification',
+          badge: isAccountApproved
+              ? 'APPROVED & VERIFIED ORGANIZER'
+              : '⏳ PENDING ADMIN APPROVAL',
+          icon: isAccountApproved
+              ? Icons.stadium_rounded
+              : Icons.hourglass_top_rounded,
         ),
         const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFFF2E93),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
+
+        // Publish Section: Locked with Pending Approval Banner until Admin approves the organizer account!
+        if (!isAccountApproved)
+          Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+              side: const BorderSide(color: Colors.amber, width: 1.5),
             ),
-            onPressed: _openPublishEventSheet,
-            icon: const Icon(Icons.add_photo_alternate_rounded),
-            label: const Text(
-              'Publish a New Festival Event',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.lock_clock_rounded, color: Colors.amber),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'Publish Section Locked — Account Pending Approval',
+                          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Your organizer application is currently in the Admin Panel approval queue (pending_organizer_accounts database).\n\nYou can navigate through the app, but you cannot publish any festival events until the administrator approves your account.',
+                    style: TextStyle(fontSize: 13, height: 1.4),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton.tonalIcon(
+                          onPressed: () async {
+                            await appState.refreshFromBackend();
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    appState.isCurrentOrganizerApproved
+                                        ? '🎉 Your account has been approved! You can now publish events.'
+                                        : 'Still awaiting Admin approval in the Web Admin Panel.',
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                          icon: const Icon(Icons.refresh_rounded, size: 18),
+                          label: const Text('Check Approval Status'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFFF2E93),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              onPressed: _openPublishEventSheet,
+              icon: const Icon(Icons.add_photo_alternate_rounded),
+              label: const Text(
+                'Publish a New Festival Event',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 18),
-        // AI Ingestion Review Queue
-        _buildAiIngestionReviewSection(context, appState),
+
         const SizedBox(height: 18),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              'Verified Business & Identity Details',
+              'Business & Identity Details',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
                   ),
@@ -1461,7 +1532,7 @@ class _ProfileSecurityScreenState extends State<ProfileSecurityScreen> {
                 icon: Icons.verified_user_outlined,
                 label: 'Official Govt. ID Verification',
                 value:
-                    '${kvk?.govIdType ?? "Passport"} (${kvk?.govIdDocumentNumber ?? "NW8492017"}) • Verified',
+                    '${kvk?.govIdType ?? "Passport"} (${kvk?.govIdDocumentNumber ?? "NW8492017"}) • ${isAccountApproved ? "Approved ✓" : "Pending Admin Review"}',
               ),
               const Divider(height: 1, indent: 56),
               _buildDetailTile(
@@ -1493,317 +1564,6 @@ class _ProfileSecurityScreenState extends State<ProfileSecurityScreen> {
             label: const Text('Sign Out to Guest View'),
           ),
         ),
-      ],
-    );
-  }
-
-  Widget _buildAiIngestionReviewSection(
-      BuildContext context, AppState appState) {
-    final aiPending =
-        appState.allFestivals.where((f) => f.isAiIngested && !f.isApprovedByAdmin).toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Icon(Icons.auto_awesome_rounded,
-                color: Color(0xFF00E5FF), size: 20),
-            const SizedBox(width: 8),
-            Text(
-              'AI Event Radar Review Queue (${aiPending.length})',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'Automated AI crawler searches 5 Dutch events per 24h & verifies KVK, TLS, and Social Media Badges. Click the source link to inspect in your browser before approving.',
-          style: TextStyle(fontSize: 12.5, color: Colors.grey),
-        ),
-        const SizedBox(height: 10),
-        if (aiPending.isEmpty)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: const [
-                  Icon(Icons.check_circle_outline_rounded,
-                      color: Color(0xFF10B981)),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'All crawled events reviewed! The AI Radar background crawler will stage newly discovered events here.',
-                      style: TextStyle(fontSize: 12.5),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          )
-        else
-          ...aiPending.map(
-            (fest) => Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(
-                  color: const Color(0xFF00E5FF).withValues(alpha: 0.3),
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF00E5FF).withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(fest.coverIcon,
-                              color: const Color(0xFF00E5FF), size: 22),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                fest.name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 15,
-                                ),
-                              ),
-                              Text(
-                                '${fest.city} • ${fest.dates}',
-                                style: const TextStyle(
-                                  fontSize: 12.5,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF10B981).withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            'Score: ${(fest.aiVerificationScore * 100).round()}%',
-                            style: const TextStyle(
-                              color: Color(0xFF10B981),
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.25),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          InkWell(
-                            borderRadius: BorderRadius.circular(6),
-                            onTap: () async {
-                              final rawUrl = fest.aiSourceUrl ?? 'https://solarweekend.com/nl';
-                              final uri = Uri.tryParse(rawUrl);
-                              if (uri != null) {
-                                try {
-                                  final launched = await launchUrl(
-                                    uri,
-                                    mode: LaunchMode.externalApplication,
-                                  );
-                                  if (!launched && context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Could not open $rawUrl in browser.')),
-                                    );
-                                  }
-                                } catch (_) {
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Opening $rawUrl in browser...')),
-                                    );
-                                  }
-                                }
-                              }
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 4),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.open_in_browser_rounded,
-                                      size: 16, color: Color(0xFF00E5FF)),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      fest.aiSourceUrl ?? 'https://official-source.nl',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Color(0xFF00E5FF),
-                                        fontWeight: FontWeight.bold,
-                                        decoration: TextDecoration.underline,
-                                        decorationColor: Color(0xFF00E5FF),
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF00E5FF).withValues(alpha: 0.15),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: const Text(
-                                      'Open Link ↗',
-                                      style: TextStyle(
-                                        fontSize: 10.5,
-                                        color: Color(0xFF00E5FF),
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            fest.aiVerificationReport ?? 'KVK and official domain verified.',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          if (fest.socialMediaVerification != null) ...[
-                            const SizedBox(height: 8),
-                            const Divider(height: 1),
-                            const SizedBox(height: 6),
-                            const Text(
-                              'Social Media Verified Badge Status:',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.grey,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 4,
-                              children: fest.socialMediaVerification!.entries.map((entry) {
-                                final channel = entry.key[0].toUpperCase() + entry.key.substring(1);
-                                final isVerified = entry.value;
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 7, vertical: 2.5),
-                                  decoration: BoxDecoration(
-                                    color: isVerified
-                                        ? const Color(0xFF10B981).withValues(alpha: 0.15)
-                                        : Colors.grey.withValues(alpha: 0.15),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                      color: isVerified
-                                          ? const Color(0xFF10B981).withValues(alpha: 0.4)
-                                          : Colors.grey.withValues(alpha: 0.3),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        isVerified
-                                            ? Icons.verified_rounded
-                                            : Icons.cancel_outlined,
-                                        size: 13,
-                                        color: isVerified
-                                            ? const Color(0xFF10B981)
-                                            : Colors.grey,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        '$channel: ${isVerified ? "Verified Badge ✓" : "Unverified"}',
-                                        style: TextStyle(
-                                          fontSize: 10.5,
-                                          fontWeight: FontWeight.w700,
-                                          color: isVerified
-                                              ? const Color(0xFF10B981)
-                                              : Colors.grey,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.redAccent,
-                              side: const BorderSide(color: Colors.redAccent),
-                            ),
-                            onPressed: () {
-                              appState.removeFestivalListing(fest.id);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Rejected and removed "${fest.name}".'),
-                                ),
-                              );
-                            },
-                            icon: const Icon(Icons.close_rounded, size: 16),
-                            label: const Text('Reject / Flag'),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: FilledButton.icon(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFF10B981),
-                              foregroundColor: Colors.white,
-                            ),
-                            onPressed: () {
-                              appState.approveFestival(fest.id);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                      'Approved "${fest.name}"! Published to Discover.'),
-                                ),
-                              );
-                            },
-                            icon: const Icon(Icons.check_rounded, size: 16),
-                            label: const Text('Approve & Publish'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
       ],
     );
   }

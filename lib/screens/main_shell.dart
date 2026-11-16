@@ -8,6 +8,7 @@ import '../services/app_state.dart';
 import '../services/sample_data.dart';
 import 'festival_detail_screen.dart';
 import 'friends_chat_screen.dart';
+import 'organizer_studio_and_scanner.dart';
 import 'profile_security_screen.dart';
 import 'settings_personalize_sheet.dart';
 
@@ -236,6 +237,28 @@ class _MainShellScreenState extends State<MainShellScreen> {
     );
   }
 
+  void _openProfileScreen() {
+    widget.appState.recordUserActivity();
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (ctx) => Scaffold(
+          appBar: AppBar(
+            title: const Text(
+              'Profile & Security',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+            centerTitle: true,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+              onPressed: () => Navigator.of(ctx).pop(),
+            ),
+          ),
+          body: ProfileSecurityScreen(appState: widget.appState),
+        ),
+      ),
+    );
+  }
+
   void _openThreeDotSettingsMenu() {
     SettingsPersonalizeSheet.show(
       context,
@@ -256,46 +279,84 @@ class _MainShellScreenState extends State<MainShellScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = widget.appState;
-    final isOrganizer = appState.isOrganizerAuthenticated || appState.activeRole == UserRole.organizer;
+    // Requirement 1: Guest mode and Visitor mode MUST show Discover tab!
+    // Only an explicitly authenticated Organizer sees the "Published" tab.
+    final isOrganizer = appState.isOrganizerAuthenticated;
     final showCommunity = appState.canShowCommunityTab;
 
     final bodyChildren = <Widget>[
-      isOrganizer
-          ? _buildOrganizerPublishedTab(context)
-          : _buildSimpleVisualDiscoverTab(context),
-      _buildSavedAndTicketsTab(context),
-      if (showCommunity) FriendsChatScreen(appState: appState),
-      ProfileSecurityScreen(appState: appState),
+      if (isOrganizer) ...[
+        _buildOrganizerPublishedTab(context),
+        OrganizerCreateStudioScreen(
+          appState: appState,
+          onEventSubmitted: () {
+            setState(() => _currentIndex = 0);
+            if (_pageController.hasClients) {
+              _pageController.animateToPage(
+                0,
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeInOutCubic,
+              );
+            }
+          },
+        ),
+        OrganizerTicketCheckScreen(appState: appState),
+      ] else ...[
+        _buildSimpleVisualDiscoverTab(context),
+        _buildSavedAndTicketsTab(context),
+        if (showCommunity) FriendsChatScreen(appState: appState),
+      ],
     ];
 
     final destinations = <NavigationDestination>[
-      NavigationDestination(
-        icon: Icon(isOrganizer ? Icons.inventory_2_outlined : Icons.local_fire_department_outlined),
-        selectedIcon: Icon(isOrganizer ? Icons.inventory_2_rounded : Icons.local_fire_department_rounded),
-        label: isOrganizer ? 'Published' : 'Discover',
-      ),
-      const NavigationDestination(
-        icon: Icon(Icons.confirmation_number_outlined),
-        selectedIcon: Icon(Icons.confirmation_number_rounded),
-        label: 'Tickets',
-      ),
-      if (showCommunity)
+      if (isOrganizer) ...[
         const NavigationDestination(
-          icon: Icon(Icons.forum_outlined),
-          selectedIcon: Icon(Icons.forum_rounded),
-          label: 'Community',
+          icon: Icon(Icons.inventory_2_outlined),
+          selectedIcon: Icon(Icons.inventory_2_rounded),
+          label: 'Published',
         ),
-      const NavigationDestination(
-        icon: Icon(Icons.person_outline_rounded),
-        selectedIcon: Icon(Icons.person_rounded),
-        label: 'Profile',
-      ),
-      const NavigationDestination(
-        icon: Icon(Icons.more_horiz_rounded),
-        selectedIcon: Icon(Icons.more_horiz_rounded),
-        label: 'More',
-      ),
+        const NavigationDestination(
+          icon: Icon(Icons.add_box_outlined),
+          selectedIcon: Icon(Icons.add_box_rounded),
+          label: 'Create Studio',
+        ),
+        const NavigationDestination(
+          icon: Icon(Icons.qr_code_scanner_rounded),
+          selectedIcon: Icon(Icons.qr_code_scanner_rounded),
+          label: 'Ticket Check',
+        ),
+        const NavigationDestination(
+          icon: Icon(Icons.more_horiz_rounded),
+          selectedIcon: Icon(Icons.more_horiz_rounded),
+          label: 'More',
+        ),
+      ] else ...[
+        const NavigationDestination(
+          icon: Icon(Icons.local_fire_department_outlined),
+          selectedIcon: Icon(Icons.local_fire_department_rounded),
+          label: 'Discover',
+        ),
+        const NavigationDestination(
+          icon: Icon(Icons.confirmation_number_outlined),
+          selectedIcon: Icon(Icons.confirmation_number_rounded),
+          label: 'Tickets',
+        ),
+        if (showCommunity)
+          const NavigationDestination(
+            icon: Icon(Icons.forum_outlined),
+            selectedIcon: Icon(Icons.forum_rounded),
+            label: 'Community',
+          ),
+        const NavigationDestination(
+          icon: Icon(Icons.more_horiz_rounded),
+          selectedIcon: Icon(Icons.more_horiz_rounded),
+          label: 'More',
+        ),
+      ],
     ];
+
+    final maxBodyIndex = bodyChildren.isNotEmpty ? bodyChildren.length - 1 : 0;
+    final safeIndex = _currentIndex.clamp(0, maxBodyIndex);
 
     return Scaffold(
       appBar: AppBar(
@@ -348,56 +409,41 @@ class _MainShellScreenState extends State<MainShellScreen> {
             onPressed: () => _openNotificationsSheet(context),
           ),
           Padding(
-            padding: const EdgeInsets.only(right: 14),
-            child: GestureDetector(
-              onTap: () {
-                final profileIdx = showCommunity ? 3 : 2;
-                setState(() => _currentIndex = profileIdx);
-                if (_pageController.hasClients) {
-                  _pageController.animateToPage(
-                    profileIdx,
-                    duration: const Duration(milliseconds: 250),
-                    curve: Curves.easeInOutCubic,
-                  );
-                }
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
+            padding: const EdgeInsets.only(right: 12),
+            child: IconButton(
+              tooltip: 'Profile & Security',
+              onPressed: _openProfileScreen,
+              icon: Container(
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(20),
+                  shape: BoxShape.circle,
+                  gradient: (appState.isOrganizerAuthenticated || appState.isVisitorAuthenticated)
+                      ? const LinearGradient(
+                          colors: [Color(0xFF7C3AED), Color(0xFFFF2E93)],
+                        )
+                      : null,
+                  color: (appState.isOrganizerAuthenticated || appState.isVisitorAuthenticated)
+                      ? null
+                      : Theme.of(context).colorScheme.surfaceContainerHighest,
+                  boxShadow: (appState.isOrganizerAuthenticated || appState.isVisitorAuthenticated)
+                      ? [
+                          BoxShadow(
+                            color: const Color(0xFFFF2E93).withValues(alpha: 0.35),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      appState.isOrganizerAuthenticated
-                          ? Icons.verified_rounded
-                          : appState.isVisitorAuthenticated
-                              ? Icons.person_rounded
-                              : Icons.person_outline_rounded,
-                      size: 15,
-                      color: (appState.isOrganizerAuthenticated ||
-                              appState.isVisitorAuthenticated)
-                          ? Theme.of(context).colorScheme.tertiary
-                          : null,
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      appState.isOrganizerAuthenticated
-                          ? 'Organizer'
-                          : appState.isVisitorAuthenticated
-                              ? 'Visitor'
-                              : 'Guest',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
+                child: Icon(
+                  (appState.isOrganizerAuthenticated || appState.isVisitorAuthenticated)
+                      ? Icons.person_rounded
+                      : Icons.person_outline_rounded,
+                  size: 20,
+                  color: (appState.isOrganizerAuthenticated || appState.isVisitorAuthenticated)
+                      ? Colors.white
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
@@ -413,25 +459,41 @@ class _MainShellScreenState extends State<MainShellScreen> {
         },
         children: bodyChildren,
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex.clamp(0, destinations.length - 1),
-        onDestinationSelected: (idx) {
-          appState.recordUserActivity();
-          if (idx == destinations.length - 1) {
-            // 3-dot clickable button at the bottom right opens Settings & Personalize menu
-            _openThreeDotSettingsMenu();
-            return;
-          }
-          setState(() => _currentIndex = idx);
-          if (_pageController.hasClients) {
-            _pageController.animateToPage(
-              idx,
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeInOutCubic,
+      bottomNavigationBar: NavigationBarTheme(
+        data: NavigationBarThemeData(
+          labelTextStyle: WidgetStateProperty.resolveWith((states) {
+            final isSelected = states.contains(WidgetState.selected);
+            return TextStyle(
+              fontSize: 12,
+              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+              letterSpacing: -0.2,
+              color: isSelected
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.onSurfaceVariant,
             );
-          }
-        },
-        destinations: destinations,
+          }),
+        ),
+        child: NavigationBar(
+          selectedIndex: safeIndex,
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+          onDestinationSelected: (idx) {
+            appState.recordUserActivity();
+            if (idx == destinations.length - 1) {
+              // 3-dot clickable button at the bottom right opens Settings & Personalize menu
+              _openThreeDotSettingsMenu();
+              return;
+            }
+            setState(() => _currentIndex = idx);
+            if (_pageController.hasClients) {
+              _pageController.animateToPage(
+                idx,
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeInOutCubic,
+              );
+            }
+          },
+          destinations: destinations,
+        ),
       ),
     );
   }
@@ -441,6 +503,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
   // ============================================================================
   Widget _buildOrganizerPublishedTab(BuildContext context) {
     final appState = widget.appState;
+    final isAccountApproved = appState.isCurrentOrganizerApproved;
     final allFestivals = appState.allFestivals;
 
     // Filter festivals owned or published by this organizer
@@ -465,8 +528,10 @@ class _MainShellScreenState extends State<MainShellScreen> {
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF7C3AED), Color(0xFFFF2E93)],
+              gradient: LinearGradient(
+                colors: isAccountApproved
+                    ? const [Color(0xFF7C3AED), Color(0xFFFF2E93)]
+                    : [Colors.amber.shade800, Colors.deepOrange.shade700],
               ),
               borderRadius: BorderRadius.circular(20),
             ),
@@ -478,7 +543,11 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     color: Colors.white.withValues(alpha: 0.2),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.stadium_rounded, color: Colors.white, size: 24),
+                  child: Icon(
+                    isAccountApproved ? Icons.stadium_rounded : Icons.hourglass_top_rounded,
+                    color: Colors.white,
+                    size: 24,
+                  ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -495,10 +564,13 @@ class _MainShellScreenState extends State<MainShellScreen> {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        '${approved.length} Live on Discovery • ${pending.length} Pending Approval',
+                        isAccountApproved
+                            ? 'Account Approved ✓ • ${approved.length} Live • ${pending.length} Pending'
+                            : '⏳ Account Pending Admin Approval — Pull down to refresh status',
                         style: const TextStyle(
-                          color: Colors.white70,
+                          color: Colors.white,
                           fontSize: 12,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
@@ -507,7 +579,61 @@ class _MainShellScreenState extends State<MainShellScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
+
+          // If Organizer Account is NOT yet approved by Admin, show Pending Account Approval Notice
+          if (!isAccountApproved) ...[
+            Card(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+                side: const BorderSide(color: Colors.amber, width: 1.5),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.pending_actions_rounded, color: Colors.amber),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Text(
+                            'Organizer Account Pending Approval',
+                            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15.5),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Your KVK registration and Government ID application has been sent to the Admin Panel (pending_organizer_accounts database).\n\nYou can navigate through the app, but publishing new festival events is locked until an administrator approves your organizer account.',
+                      style: TextStyle(fontSize: 13, height: 1.4),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          await appState.refreshFromBackend();
+                        },
+                        icon: const Icon(Icons.refresh_rounded, size: 18),
+                        label: const Text('Check Approval Status Now'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
 
           // Pending Approvals Section
           Row(

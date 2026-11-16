@@ -30,17 +30,16 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Log incoming requests for debugging mobile/web sync
+// Log incoming requests
 app.use((req, res, next) => {
   console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
   next();
 });
 
 // Configure Multer with Memory Storage (works on Vercel Serverless & locally)
-// Converts uploaded images to Base64 Data URLs stored directly in SQLite / Turso
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 } // 5 MB limit
+  limits: { fileSize: 5 * 1024 * 1024 }
 });
 
 // Serve legacy local uploads if running locally
@@ -90,7 +89,6 @@ function initDatabaseDriver() {
 
 initDatabaseDriver();
 
-// Unified async query helpers (work identically for Turso Cloud & Local SQLite)
 async function dbAll(sql, args = []) {
   if (libsqlClient) {
     const rs = await libsqlClient.execute({ sql, args });
@@ -123,7 +121,13 @@ async function dbRun(sql, args = []) {
 }
 
 // ============================================================================
-// AUTOMATIC SCHEMA CREATION & INITIAL SEEDING
+// 5 DEDICATED DATABASES / TABLES:
+// 1. visitor_accounts           (Auto-approved visitor accounts)
+// 2. organizer_accounts         (Approved organizer accounts)
+// 3. pending_organizer_accounts (Pending organizer applications awaiting admin approval)
+// 4. published_events           (Approved public festivals)
+// 5. pending_event_approvals    (Pending organizer events awaiting admin approval)
+// + announcements               (System-wide admin announcements)
 // ============================================================================
 async function ensureDbInitialized() {
   if (dbInitialized) return;
@@ -131,9 +135,57 @@ async function ensureDbInitialized() {
 
   dbInitPromise = (async () => {
     try {
-      // 1. Festivals Table
+      // 1. Visitor Accounts Database
       await dbRun(`
-        CREATE TABLE IF NOT EXISTS festivals (
+        CREATE TABLE IF NOT EXISTS visitor_accounts (
+          email TEXT PRIMARY KEY,
+          name TEXT,
+          username TEXT,
+          authMethod TEXT,
+          phone TEXT,
+          address TEXT,
+          createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      // 2. Approved Organizer Accounts Database
+      await dbRun(`
+        CREATE TABLE IF NOT EXISTS organizer_accounts (
+          email TEXT PRIMARY KEY,
+          name TEXT,
+          companyName TEXT,
+          kvkNumber TEXT,
+          vatNumber TEXT,
+          phone TEXT,
+          businessAddress TEXT,
+          govIdType TEXT,
+          govIdNumber TEXT,
+          status TEXT DEFAULT 'Approved',
+          registeredAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+          approvedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      // 3. Pending Organizer Account Approvals Database
+      await dbRun(`
+        CREATE TABLE IF NOT EXISTS pending_organizer_accounts (
+          email TEXT PRIMARY KEY,
+          name TEXT,
+          companyName TEXT,
+          kvkNumber TEXT,
+          vatNumber TEXT,
+          phone TEXT,
+          businessAddress TEXT,
+          govIdType TEXT,
+          govIdNumber TEXT,
+          status TEXT DEFAULT 'Pending Approval',
+          registeredAt DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      // 4. Published Events Database (Approved Festivals)
+      await dbRun(`
+        CREATE TABLE IF NOT EXISTS published_events (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
           tagline TEXT,
@@ -153,7 +205,7 @@ async function ensureDbInitialized() {
           ecoCommitments TEXT,
           primaryColor INTEGER,
           secondaryColor INTEGER,
-          isApprovedByAdmin INTEGER,
+          isApprovedByAdmin INTEGER DEFAULT 1,
           latitude REAL,
           longitude REAL,
           coverImageLabel TEXT,
@@ -162,27 +214,38 @@ async function ensureDbInitialized() {
         )
       `);
 
-      // 2. Users / Organizers Table
+      // 5. Pending Event Approvals Database (Awaiting Admin Approval)
       await dbRun(`
-        CREATE TABLE IF NOT EXISTS users (
-          email TEXT PRIMARY KEY,
-          name TEXT,
-          role TEXT,
-          profilePhotoUrl TEXT,
-          isApproved INTEGER DEFAULT 0,
-          kvkNumber TEXT,
-          companyName TEXT,
-          phone TEXT,
-          businessAddress TEXT,
-          govIdType TEXT,
-          govIdNumber TEXT,
-          status TEXT DEFAULT 'Pending Review',
-          registeredAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+        CREATE TABLE IF NOT EXISTS pending_event_approvals (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          tagline TEXT,
+          categoryLabel TEXT,
+          dates TEXT,
+          city TEXT,
+          venueAddress TEXT,
+          distanceKm INTEGER,
+          priceEur REAL,
+          ticketsSoldInApp INTEGER,
+          capacity INTEGER,
+          genres TEXT,
+          howToGetThere TEXT,
+          publicTransportInfo TEXT,
+          festivalTransportOffer TEXT,
+          organizerName TEXT,
+          ecoCommitments TEXT,
+          primaryColor INTEGER,
+          secondaryColor INTEGER,
+          isApprovedByAdmin INTEGER DEFAULT 0,
+          latitude REAL,
+          longitude REAL,
+          coverImageLabel TEXT,
+          bannerImagePath TEXT,
+          createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
         )
       `);
 
-      // 3. Announcements Table
+      // 6. Announcements Table
       await dbRun(`
         CREATE TABLE IF NOT EXISTS announcements (
           id TEXT PRIMARY KEY,
@@ -210,26 +273,35 @@ async function ensureDbInitialized() {
         );
       }
 
-      // Seed default organizers if empty
-      const orgCount = await dbGet("SELECT COUNT(*) AS count FROM users WHERE role = 'organizer'");
-      if (!orgCount || Number(orgCount.count) === 0) {
-        const defaultOrganizers = [
-          ['organizer@greenpulse.nl', 'Brabant Sustainable Events', 'organizer', 1, '17283940', 'GreenPulse Events B.V.', '+31 40 123 4567', 'Torenallee 20, 5617 BC Eindhoven', 'Dutch Passport', 'NT1928374', 'Approved'],
-          ['pending.organizer@festivals.nl', 'Daan van Dijk', 'organizer', 0, '84920194', 'Solar Vibe Productions B.V.', '+31 20 892 1100', 'Keizersgracht 421, Amsterdam', 'EU National ID Card', 'NL99283411', 'Pending Review'],
-          ['rave.holland@events.nl', 'Sophie Meijer', 'organizer', 0, '99102834', 'Neon Nights NL', '+31 10 334 9921', 'Coolsingel 104, Rotterdam', 'Driver License', 'DR-8812903', 'Pending Review']
+      // Seed default Approved Organizer if empty
+      const approvedOrgCount = await dbGet('SELECT COUNT(*) AS count FROM organizer_accounts');
+      if (!approvedOrgCount || Number(approvedOrgCount.count) === 0) {
+        await dbRun(
+          `INSERT OR REPLACE INTO organizer_accounts (email, name, companyName, kvkNumber, vatNumber, phone, businessAddress, govIdType, govIdNumber, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ['organizer@greenpulse.nl', 'Brabant Sustainable Events', 'GreenPulse Events B.V.', '17283940', 'NL863421098B01', '+31 40 123 4567', 'Torenallee 20, 5617 BC Eindhoven', 'Dutch Passport', 'NT1928374', 'Approved']
+        );
+      }
+
+      // Seed default Pending Organizers if both pending and approved only have the 1 default
+      const pendingOrgCount = await dbGet('SELECT COUNT(*) AS count FROM pending_organizer_accounts');
+      if ((!pendingOrgCount || Number(pendingOrgCount.count) === 0) && (!approvedOrgCount || Number(approvedOrgCount.count) === 0)) {
+        const defaultPendingOrgs = [
+          ['pending.organizer@festivals.nl', 'Daan van Dijk', 'Solar Vibe Productions B.V.', '84920194', 'NL81239012B01', '+31 20 892 1100', 'Keizersgracht 421, Amsterdam', 'EU National ID Card', 'NL99283411', 'Pending Approval'],
+          ['rave.holland@events.nl', 'Sophie Meijer', 'Neon Nights NL', '99102834', 'NL89910283B01', '+31 10 334 9921', 'Coolsingel 104, Rotterdam', 'Driver License', 'DR-8812903', 'Pending Approval']
         ];
-        for (const org of defaultOrganizers) {
+        for (const org of defaultPendingOrgs) {
           await dbRun(
-            `INSERT OR REPLACE INTO users (email, name, role, isApproved, kvkNumber, companyName, phone, businessAddress, govIdType, govIdNumber, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT OR REPLACE INTO pending_organizer_accounts (email, name, companyName, kvkNumber, vatNumber, phone, businessAddress, govIdType, govIdNumber, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             org
           );
         }
       }
 
-      // Seed initial festivals if empty
-      const festCount = await dbGet('SELECT COUNT(*) AS count FROM festivals');
-      if (!festCount || Number(festCount.count) === 0) {
+      // Seed initial 4 approved festivals into published_events if empty
+      const pubFestCount = await dbGet('SELECT COUNT(*) AS count FROM published_events');
+      if (!pubFestCount || Number(pubFestCount.count) === 0) {
         const defaultEco = JSON.stringify({
           freeDrinkingWater: true,
           firstAidAndQuietZone: true,
@@ -282,7 +354,7 @@ async function ensureDbInitialized() {
 
         for (const f of initialFestivals) {
           await dbRun(
-            `INSERT OR REPLACE INTO festivals (
+            `INSERT OR REPLACE INTO published_events (
               id, name, tagline, categoryLabel, dates, city, venueAddress,
               distanceKm, priceEur, ticketsSoldInApp, capacity, genres,
               howToGetThere, publicTransportInfo, festivalTransportOffer,
@@ -303,24 +375,39 @@ async function ensureDbInitialized() {
   return dbInitPromise;
 }
 
-// Middleware to ensure DB tables exist before handling any API request
 app.use(async (req, res, next) => {
   await ensureDbInitialized();
   next();
 });
 
+function formatEventRow(row, isApproved) {
+  return {
+    ...row,
+    genres: row.genres ? JSON.parse(row.genres) : [],
+    ecoCommitments: row.ecoCommitments ? JSON.parse(row.ecoCommitments) : null,
+    isApprovedByAdmin: isApproved
+  };
+}
+
 // ---------------------- API ROUTES ----------------------
 
-// Health check
-app.get('/api/health', (req, res) => {
+// Health check showing all 5 tables
+app.get('/api/health', async (req, res) => {
   res.json({
     status: 'ok',
     mode: process.env.TURSO_DATABASE_URL ? 'turso-cloud-sqlite' : 'local-sqlite',
+    databases: [
+      'visitor_accounts',
+      'organizer_accounts',
+      'pending_organizer_accounts',
+      'published_events',
+      'pending_event_approvals'
+    ],
     time: new Date().toISOString()
   });
 });
 
-// Image Upload Endpoint (Converts to Base64 Data URL for serverless & SQLite persistence)
+// Image Upload Endpoint (Converts to Base64 Data URL for SQLite storage)
 app.post('/api/upload', upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
@@ -336,28 +423,222 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
   });
 });
 
-// GET all festivals
-app.get('/api/festivals', async (req, res) => {
+// ============================================================================
+// 1. VISITOR ACCOUNTS DATABASE ROUTES (`visitor_accounts`)
+// ============================================================================
+app.get('/api/visitors', async (req, res) => {
   try {
-    const rows = await dbAll('SELECT * FROM festivals ORDER BY createdAt DESC');
-    const festivals = rows.map(row => ({
-      ...row,
-      genres: row.genres ? JSON.parse(row.genres) : [],
-      ecoCommitments: row.ecoCommitments ? JSON.parse(row.ecoCommitments) : null,
-      isApprovedByAdmin: Boolean(row.isApprovedByAdmin)
-    }));
-    res.json(festivals);
+    const rows = await dbAll('SELECT * FROM visitor_accounts ORDER BY createdAt DESC');
+    res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST / publish festival
+app.post('/api/visitors/register', async (req, res) => {
+  try {
+    const v = req.body;
+    await dbRun(
+      `INSERT OR REPLACE INTO visitor_accounts (email, name, username, authMethod, phone, address)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        v.email,
+        v.name || 'Festival Visitor',
+        v.username || '@visitor',
+        v.authMethod || 'Email',
+        v.phone || '',
+        v.address || ''
+      ]
+    );
+    res.status(201).json({ message: 'Visitor saved to visitor_accounts database', email: v.email });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================================
+// 2 & 3. ORGANIZER ACCOUNTS & PENDING ORGANIZER APPROVALS ROUTES
+// (`organizer_accounts` AND `pending_organizer_accounts`)
+// ============================================================================
+
+// GET combined or separated organizers for Admin Panel & App
+app.get('/api/organizers', async (req, res) => {
+  try {
+    const approvedRows = await dbAll('SELECT * FROM organizer_accounts ORDER BY registeredAt DESC');
+    const pendingRows = await dbAll('SELECT * FROM pending_organizer_accounts ORDER BY registeredAt DESC');
+
+    const approvedList = approvedRows.map(r => ({
+      ...r,
+      isApproved: true,
+      status: 'Approved'
+    }));
+    const pendingList = pendingRows.map(r => ({
+      ...r,
+      isApproved: false,
+      status: r.status || 'Pending Approval'
+    }));
+
+    res.json([...pendingList, ...approvedList]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/organizers/approved', async (req, res) => {
+  try {
+    const rows = await dbAll('SELECT * FROM organizer_accounts ORDER BY registeredAt DESC');
+    res.json(rows.map(r => ({ ...r, isApproved: true, status: 'Approved' })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/organizers/pending', async (req, res) => {
+  try {
+    const rows = await dbAll('SELECT * FROM pending_organizer_accounts ORDER BY registeredAt DESC');
+    res.json(rows.map(r => ({ ...r, isApproved: false, status: 'Pending Approval' })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/organizers/register -> Always goes into `pending_organizer_accounts`!
+app.post('/api/organizers/register', async (req, res) => {
+  try {
+    const o = req.body;
+    // Remove from approved if re-registering
+    await dbRun('DELETE FROM organizer_accounts WHERE email = ?', [o.email]);
+
+    await dbRun(
+      `INSERT OR REPLACE INTO pending_organizer_accounts (
+        email, name, companyName, kvkNumber, vatNumber, phone,
+        businessAddress, govIdType, govIdNumber, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending Approval')`,
+      [
+        o.email,
+        o.name || o.companyName,
+        o.companyName || o.name,
+        o.kvkNumber || '',
+        o.vatNumber || '',
+        o.phone || '',
+        o.businessAddress || '',
+        o.govIdType || 'Dutch Passport',
+        o.govIdNumber || ''
+      ]
+    );
+    res.status(201).json({ message: 'Organizer staged in pending_organizer_accounts', email: o.email });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/organizers/:email/approve
+// If approved == true: moves record from `pending_organizer_accounts` -> `organizer_accounts`
+// If approved == false (Rejected): deletes from both tables immediately!
+app.post('/api/organizers/:email/approve', async (req, res) => {
+  try {
+    const email = req.params.email;
+    const { approved } = req.body;
+
+    if (approved) {
+      const pending = await dbGet('SELECT * FROM pending_organizer_accounts WHERE email = ?', [email]);
+      if (pending) {
+        await dbRun(
+          `INSERT OR REPLACE INTO organizer_accounts (
+            email, name, companyName, kvkNumber, vatNumber, phone,
+            businessAddress, govIdType, govIdNumber, status, registeredAt
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Approved', ?)`,
+          [
+            pending.email,
+            pending.name,
+            pending.companyName,
+            pending.kvkNumber,
+            pending.vatNumber || '',
+            pending.phone,
+            pending.businessAddress,
+            pending.govIdType,
+            pending.govIdNumber,
+            pending.registeredAt
+          ]
+        );
+        await dbRun('DELETE FROM pending_organizer_accounts WHERE email = ?', [email]);
+      }
+      res.json({ message: `Organizer ${email} approved and moved to organizer_accounts`, approved: true, status: 'Approved' });
+    } else {
+      // Rejected or deleted: remove completely from both tables
+      await dbRun('DELETE FROM pending_organizer_accounts WHERE email = ?', [email]);
+      await dbRun('DELETE FROM organizer_accounts WHERE email = ?', [email]);
+      res.json({ message: `Organizer ${email} rejected and deleted from databases`, approved: false, deleted: true });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/organizers/:email
+app.delete('/api/organizers/:email', async (req, res) => {
+  try {
+    const email = req.params.email;
+    await dbRun('DELETE FROM pending_organizer_accounts WHERE email = ?', [email]);
+    await dbRun('DELETE FROM organizer_accounts WHERE email = ?', [email]);
+    res.json({ message: `Organizer ${email} permanently deleted` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================================
+// 4 & 5. PUBLISHED EVENTS & PENDING EVENT APPROVALS ROUTES
+// (`published_events` AND `pending_event_approvals`)
+// ============================================================================
+
+// GET all festivals (combines published_events + pending_event_approvals)
+app.get('/api/festivals', async (req, res) => {
+  try {
+    const publishedRows = await dbAll('SELECT * FROM published_events ORDER BY createdAt DESC');
+    const pendingRows = await dbAll('SELECT * FROM pending_event_approvals ORDER BY createdAt DESC');
+
+    const published = publishedRows.map(r => formatEventRow(r, true));
+    const pending = pendingRows.map(r => formatEventRow(r, false));
+
+    res.json([...pending, ...published]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/festivals/published', async (req, res) => {
+  try {
+    const rows = await dbAll('SELECT * FROM published_events ORDER BY createdAt DESC');
+    res.json(rows.map(r => formatEventRow(r, true)));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/festivals/pending', async (req, res) => {
+  try {
+    const rows = await dbAll('SELECT * FROM pending_event_approvals ORDER BY createdAt DESC');
+    res.json(rows.map(r => formatEventRow(r, false)));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/festivals -> Inserts into `pending_event_approvals` (or moves to `published_events` if approved by Admin)
 app.post('/api/festivals', async (req, res) => {
   try {
     const f = req.body;
+    const isApproved = Boolean(f.isApprovedByAdmin);
+    const targetTable = isApproved ? 'published_events' : 'pending_event_approvals';
+
+    // If it is being approved, remove it from pending_event_approvals
+    if (isApproved) {
+      await dbRun('DELETE FROM pending_event_approvals WHERE id = ?', [f.id]);
+    }
+
     const query = `
-      INSERT OR REPLACE INTO festivals (
+      INSERT OR REPLACE INTO ${targetTable} (
         id, name, tagline, categoryLabel, dates, city, venueAddress,
         distanceKm, priceEur, ticketsSoldInApp, capacity, genres,
         howToGetThere, publicTransportInfo, festivalTransportOffer,
@@ -386,7 +667,7 @@ app.post('/api/festivals', async (req, res) => {
       JSON.stringify(f.ecoCommitments || {}),
       f.primaryColor || 0xFF7C3AED,
       f.secondaryColor || 0xFFFF2E93,
-      f.isApprovedByAdmin ? 1 : 0,
+      isApproved ? 1 : 0,
       f.latitude || 51.4416,
       f.longitude || 5.4697,
       f.coverImageLabel || 'Custom Cover',
@@ -394,139 +675,109 @@ app.post('/api/festivals', async (req, res) => {
     ];
 
     await dbRun(query, values);
-    res.status(201).json({ message: 'Festival created/updated', id: f.id });
+    res.status(201).json({ message: `Festival saved in ${targetTable}`, id: f.id, table: targetTable });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// PUT / update festival
+// POST /api/festivals/:id/approve -> Moves from `pending_event_approvals` to `published_events`
+app.post('/api/festivals/:id/approve', async (req, res) => {
+  try {
+    const festivalId = req.params.id;
+    const pending = await dbGet('SELECT * FROM pending_event_approvals WHERE id = ?', [festivalId]);
+    if (pending) {
+      await dbRun(
+        `INSERT OR REPLACE INTO published_events (
+          id, name, tagline, categoryLabel, dates, city, venueAddress,
+          distanceKm, priceEur, ticketsSoldInApp, capacity, genres,
+          howToGetThere, publicTransportInfo, festivalTransportOffer,
+          organizerName, ecoCommitments, primaryColor, secondaryColor,
+          isApprovedByAdmin, latitude, longitude, coverImageLabel, bannerImagePath
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+        [
+          pending.id, pending.name, pending.tagline, pending.categoryLabel,
+          pending.dates, pending.city, pending.venueAddress, pending.distanceKm,
+          pending.priceEur, pending.ticketsSoldInApp, pending.capacity, pending.genres,
+          pending.howToGetThere, pending.publicTransportInfo, pending.festivalTransportOffer,
+          pending.organizerName, pending.ecoCommitments, pending.primaryColor,
+          pending.secondaryColor, pending.latitude, pending.longitude,
+          pending.coverImageLabel, pending.bannerImagePath
+        ]
+      );
+      await dbRun('DELETE FROM pending_event_approvals WHERE id = ?', [festivalId]);
+    }
+    res.json({ message: 'Festival approved and moved to published_events', id: festivalId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT / update festival in whichever table it resides
 app.put('/api/festivals/:id', async (req, res) => {
   try {
     const festivalId = req.params.id;
     const f = req.body;
-    const query = `
-      UPDATE festivals SET
-        name = COALESCE(?, name),
-        tagline = COALESCE(?, tagline),
-        categoryLabel = COALESCE(?, categoryLabel),
-        dates = COALESCE(?, dates),
-        city = COALESCE(?, city),
-        venueAddress = COALESCE(?, venueAddress),
-        distanceKm = COALESCE(?, distanceKm),
-        priceEur = COALESCE(?, priceEur),
-        capacity = COALESCE(?, capacity),
-        genres = COALESCE(?, genres),
-        howToGetThere = COALESCE(?, howToGetThere),
-        publicTransportInfo = COALESCE(?, publicTransportInfo),
-        festivalTransportOffer = COALESCE(?, festivalTransportOffer),
-        organizerName = COALESCE(?, organizerName),
-        ecoCommitments = COALESCE(?, ecoCommitments),
-        isApprovedByAdmin = COALESCE(?, isApprovedByAdmin),
-        latitude = COALESCE(?, latitude),
-        longitude = COALESCE(?, longitude),
-        bannerImagePath = COALESCE(?, bannerImagePath)
-      WHERE id = ?
-    `;
 
-    const values = [
-      f.name ?? null,
-      f.tagline ?? null,
-      f.categoryLabel ?? null,
-      f.dates ?? null,
-      f.city ?? null,
-      f.venueAddress ?? null,
-      f.distanceKm ?? null,
-      f.priceEur ?? null,
-      f.capacity ?? null,
-      f.genres ? JSON.stringify(f.genres) : null,
-      f.howToGetThere ?? null,
-      f.publicTransportInfo ?? null,
-      f.festivalTransportOffer ?? null,
-      f.organizerName ?? null,
-      f.ecoCommitments ? JSON.stringify(f.ecoCommitments) : null,
-      f.isApprovedByAdmin !== undefined ? (f.isApprovedByAdmin ? 1 : 0) : null,
-      f.latitude ?? null,
-      f.longitude ?? null,
-      f.bannerImagePath ?? null,
-      festivalId
-    ];
+    for (const table of ['published_events', 'pending_event_approvals']) {
+      await dbRun(
+        `UPDATE ${table} SET
+          name = COALESCE(?, name),
+          tagline = COALESCE(?, tagline),
+          categoryLabel = COALESCE(?, categoryLabel),
+          dates = COALESCE(?, dates),
+          city = COALESCE(?, city),
+          venueAddress = COALESCE(?, venueAddress),
+          distanceKm = COALESCE(?, distanceKm),
+          priceEur = COALESCE(?, priceEur),
+          capacity = COALESCE(?, capacity),
+          genres = COALESCE(?, genres),
+          howToGetThere = COALESCE(?, howToGetThere),
+          publicTransportInfo = COALESCE(?, publicTransportInfo),
+          festivalTransportOffer = COALESCE(?, festivalTransportOffer),
+          organizerName = COALESCE(?, organizerName),
+          ecoCommitments = COALESCE(?, ecoCommitments),
+          latitude = COALESCE(?, latitude),
+          longitude = COALESCE(?, longitude),
+          bannerImagePath = COALESCE(?, bannerImagePath)
+        WHERE id = ?`,
+        [
+          f.name ?? null,
+          f.tagline ?? null,
+          f.categoryLabel ?? null,
+          f.dates ?? null,
+          f.city ?? null,
+          f.venueAddress ?? null,
+          f.distanceKm ?? null,
+          f.priceEur ?? null,
+          f.capacity ?? null,
+          f.genres ? JSON.stringify(f.genres) : null,
+          f.howToGetThere ?? null,
+          f.publicTransportInfo ?? null,
+          f.festivalTransportOffer ?? null,
+          f.organizerName ?? null,
+          f.ecoCommitments ? JSON.stringify(f.ecoCommitments) : null,
+          f.latitude ?? null,
+          f.longitude ?? null,
+          f.bannerImagePath ?? null,
+          festivalId
+        ]
+      );
+    }
 
-    const result = await dbRun(query, values);
-    res.json({ message: 'Festival updated successfully', id: festivalId, changes: result.changes });
+    res.json({ message: 'Festival updated successfully', id: festivalId });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// DELETE festival
+// DELETE festival (Reject or Delete removes from both pending_event_approvals and published_events)
 app.delete('/api/festivals/:id', async (req, res) => {
   try {
     const festivalId = req.params.id;
-    const result = await dbRun('DELETE FROM festivals WHERE id = ?', [festivalId]);
-    res.json({ message: 'Festival deleted successfully', id: festivalId, changes: result.changes });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET all organizers (for Admin Web Dashboard approval queue)
-app.get('/api/organizers', async (req, res) => {
-  try {
-    const rows = await dbAll('SELECT * FROM users WHERE role = ? ORDER BY registeredAt DESC', ['organizer']);
-    const organizers = rows.map(r => ({
-      ...r,
-      isApproved: Boolean(r.isApproved)
-    }));
-    res.json(organizers);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/organizers/:email/approve
-app.post('/api/organizers/:email/approve', async (req, res) => {
-  try {
-    const email = req.params.email;
-    const { approved, statusNote } = req.body;
-    const isApprovedInt = approved ? 1 : 0;
-    const statusStr = approved ? 'Approved' : (statusNote || 'Rejected');
-
-    await dbRun(
-      'UPDATE users SET isApproved = ?, status = ?, updatedAt = CURRENT_TIMESTAMP WHERE email = ?',
-      [isApprovedInt, statusStr, email]
-    );
-    res.json({ message: `Organizer ${email} updated`, approved: Boolean(isApprovedInt), status: statusStr });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST / register or update user/organizer
-app.post('/api/organizers/register', async (req, res) => {
-  try {
-    const o = req.body;
-    const query = `
-      INSERT OR REPLACE INTO users (
-        email, name, role, isApproved, kvkNumber, companyName, phone,
-        businessAddress, govIdType, govIdNumber, status
-      ) VALUES (?, ?, 'organizer', ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
-    const values = [
-      o.email,
-      o.name,
-      o.isApproved ? 1 : 0,
-      o.kvkNumber || '',
-      o.companyName || o.name,
-      o.phone || '',
-      o.businessAddress || '',
-      o.govIdType || 'Dutch Passport',
-      o.govIdNumber || '',
-      o.status || 'Pending Review'
-    ];
-
-    await dbRun(query, values);
-    res.json({ message: 'Organizer registered', email: o.email });
+    await dbRun('DELETE FROM pending_event_approvals WHERE id = ?', [festivalId]);
+    await dbRun('DELETE FROM published_events WHERE id = ?', [festivalId]);
+    res.json({ message: 'Festival deleted from databases', id: festivalId });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -534,7 +785,6 @@ app.post('/api/organizers/register', async (req, res) => {
 
 // ---------------------- ANNOUNCEMENT ROUTES ----------------------
 
-// GET active announcements
 app.get('/api/announcements', async (req, res) => {
   try {
     const rows = await dbAll('SELECT * FROM announcements WHERE isActive = 1 ORDER BY createdAt DESC');
@@ -548,31 +798,27 @@ app.get('/api/announcements', async (req, res) => {
   }
 });
 
-// POST create/update announcement
 app.post('/api/announcements', async (req, res) => {
   try {
     const a = req.body;
     const id = a.id || `ann_${Date.now()}`;
-    const query = `
-      INSERT OR REPLACE INTO announcements (id, title, message, category, isActive)
-      VALUES (?, ?, ?, ?, ?)
-    `;
-    const values = [
-      id,
-      a.title || 'Important Notice',
-      a.message || '',
-      a.category || 'Update',
-      a.isActive !== undefined ? (a.isActive ? 1 : 0) : 1
-    ];
-
-    await dbRun(query, values);
+    await dbRun(
+      `INSERT OR REPLACE INTO announcements (id, title, message, category, isActive)
+       VALUES (?, ?, ?, ?, ?)`,
+      [
+        id,
+        a.title || 'Important Notice',
+        a.message || '',
+        a.category || 'Update',
+        a.isActive !== undefined ? (a.isActive ? 1 : 0) : 1
+      ]
+    );
     res.status(201).json({ message: 'Announcement published', id: id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// DELETE announcement
 app.delete('/api/announcements/:id', async (req, res) => {
   try {
     const id = req.params.id;
@@ -583,14 +829,12 @@ app.delete('/api/announcements/:id', async (req, res) => {
   }
 });
 
-// Export the Express app for Vercel Serverless Functions (api/index.js)
 module.exports = app;
 
-// Only call app.listen when running directly on Mac / local server (not inside Vercel Serverless)
 if (require.main === module && !process.env.VERCEL) {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`====================================================`);
-    console.log(`🚀 Festival Buddy SQLite API server running!`);
+    console.log(`🚀 Festival Buddy 5-Database SQLite API Server running!`);
     console.log(`Local Access:   http://localhost:${PORT}`);
     console.log(`Mode:           ${process.env.TURSO_DATABASE_URL ? 'Turso Cloud SQLite' : 'Local SQLite File'}`);
     console.log(`====================================================`);

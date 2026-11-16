@@ -6,16 +6,16 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   testWidgets(
-      'Guest launches with Discover, Tickets, Profile, More; Community appears only for signed-in Visitor',
+      'Guest launches with Discover, Tickets, More; Profile is in top app bar; Community appears for signed-in Visitor',
       (WidgetTester tester) async {
     final appState = AppState();
     await tester.pumpWidget(FestivalBuddyApp(appState: appState));
 
-    // In guest mode, Community tab is NOT visible
+    // In guest mode, Community tab is NOT visible, Profile is in top bar tooltip
     expect(find.text('Discover'), findsOneWidget);
     expect(find.text('Tickets'), findsOneWidget);
-    expect(find.text('Profile'), findsOneWidget);
     expect(find.text('More'), findsOneWidget);
+    expect(find.byTooltip('Profile & Security'), findsOneWidget);
     expect(find.text('Community'), findsNothing);
 
     // Sign in as visitor -> Community tab appears
@@ -74,29 +74,63 @@ void main() {
     appState.stopAiIngestionTimer();
   });
 
-  test('AI Ingested events review queue: approve publishes to discover, reject removes', () {
+  test('Organizer account and event approval workflow: pending until approved, deleted on reject', () {
     final appState = AppState();
-    
-    // Check pending AI crawled events
-    final pendingAi = appState.allFestivals.where((f) => f.isAiIngested && !f.isApprovedByAdmin).toList();
-    expect(pendingAi.isNotEmpty, isTrue);
 
-    final targetFest = pendingAi.first;
-    expect(appState.approvedFestivals.any((f) => f.id == targetFest.id), isFalse);
+    // 1. Register new organizer -> starts in Pending Approval
+    appState.completeOrganizerRegistration(
+      authMethod: 'Email (OTP)',
+      companyName: 'Test Events B.V.',
+      email: 'test@events.nl',
+      phone: '+31 6 12345678',
+      businessAddress: 'Eindhoven',
+      kvkNumber: '12345678',
+      vatNumber: 'NL123456789B01',
+      govIdType: 'Dutch / EU Passport',
+      govIdDocumentNumber: 'PASS1234',
+      govIdFileName: 'scan.pdf',
+    );
+    expect(appState.isCurrentOrganizerApproved, isFalse);
 
-    // Approve event
-    appState.approveFestival(targetFest.id);
-    expect(appState.approvedFestivals.any((f) => f.id == targetFest.id), isTrue);
+    // 2. Admin approves organizer -> now approved
+    appState.setOrganizerApproval('test@events.nl', approved: true);
+    expect(appState.isCurrentOrganizerApproved, isTrue);
 
-    // Reject remaining event
-    final remainingPending = appState.allFestivals.where((f) => f.isAiIngested && !f.isApprovedByAdmin).toList();
-    if (remainingPending.isNotEmpty) {
-      final rejectTarget = remainingPending.first;
-      appState.removeFestivalListing(rejectTarget.id);
-      expect(appState.allFestivals.any((f) => f.id == rejectTarget.id), isFalse);
-    }
+    // 3. Organizer publishes event -> starts in pendingFestivals
+    appState.createFestivalListing(
+      name: 'Test Festival',
+      tagline: 'Sustainable vibes',
+      dates: '10 Aug',
+      city: 'Eindhoven',
+      venueAddress: 'Strijp-S',
+      distanceKm: 5,
+      priceEur: 50,
+      genres: ['Electronic & Techno'],
+      howToGetThere: 'Train',
+      publicTransportInfo: 'NS',
+      festivalTransportOffer: 'Shuttle',
+      ecoCommitments: const EcoCommitments(
+        freeDrinkingWater: true,
+        firstAidAndQuietZone: true,
+        publicTransportIncluded: true,
+        bicycleParking: true,
+        reusableCupsOnly: true,
+        recyclingStations: true,
+        renewableEnergy: true,
+        safeSpaceStewards: true,
+        localEcoPartners: true,
+      ),
+    );
+    final pendingEvent = appState.pendingFestivals.firstWhere((f) => f.name == 'Test Festival');
+    expect(appState.approvedFestivals.any((f) => f.id == pendingEvent.id), isFalse);
 
-    appState.stopAiIngestionTimer();
+    // 4. Admin approves event -> moves to approvedFestivals
+    appState.approveFestival(pendingEvent.id);
+    expect(appState.approvedFestivals.any((f) => f.id == pendingEvent.id), isTrue);
+
+    // 5. Rejecting/deleting removes it completely
+    appState.deleteFestival(pendingEvent.id);
+    expect(appState.allFestivals.any((f) => f.id == pendingEvent.id), isFalse);
   });
 
   testWidgets('Searching artist name in lineups filters and displays festival on Discover', (WidgetTester tester) async {

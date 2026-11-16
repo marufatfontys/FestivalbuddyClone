@@ -129,7 +129,7 @@ class ApiService {
     }
   }
 
-  /// Registers an organizer account to the backend database
+  /// Registers an organizer account to the backend database (`pending_organizer_accounts`)
   static Future<bool> registerOrganizer(Map<String, dynamic> organizerData) async {
     try {
       final uri = Uri.parse('$baseUrl/api/organizers/register');
@@ -142,6 +142,34 @@ class ApiService {
     } catch (_) {
       return false;
     }
+  }
+
+  /// Registers or updates a visitor account in `visitor_accounts` database
+  static Future<bool> registerVisitor(Map<String, dynamic> visitorData) async {
+    try {
+      final uri = Uri.parse('$baseUrl/api/visitors/register');
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(visitorData),
+      ).timeout(const Duration(seconds: 5));
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Fetches registered visitors from `visitor_accounts` database
+  static Future<List<Map<String, dynamic>>> fetchVisitors() async {
+    try {
+      final uri = Uri.parse('$baseUrl/api/visitors');
+      final response = await http.get(uri).timeout(const Duration(seconds: 4));
+      if (response.statusCode == 200) {
+        final List<dynamic> list = jsonDecode(response.body) as List<dynamic>;
+        return list.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+      }
+    } catch (_) {}
+    return [];
   }
 
   /// Fetches active system announcements
