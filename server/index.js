@@ -4,6 +4,25 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
+// Load .env file automatically if present locally
+const envPaths = [path.join(__dirname, '..', '.env'), path.join(__dirname, '.env')];
+for (const envPath of envPaths) {
+  if (fs.existsSync(envPath)) {
+    const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
+        const idx = trimmed.indexOf('=');
+        const key = trimmed.substring(0, idx).trim();
+        const val = trimmed.substring(idx + 1).trim();
+        if (!process.env[key]) {
+          process.env[key] = val;
+        }
+      }
+    }
+  }
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
