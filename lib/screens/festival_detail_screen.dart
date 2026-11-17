@@ -1,13 +1,11 @@
-import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/festival_models.dart';
 import '../services/app_state.dart';
 import 'companion_view.dart';
+import '../widgets/festival_banner_image.dart';
 
 class FestivalDetailScreen extends StatefulWidget {
   const FestivalDetailScreen({
@@ -507,14 +505,7 @@ class _FestivalDetailScreenState extends State<FestivalDetailScreen>
             children: [
               if (festival.bannerImagePath != null)
                 Positioned.fill(
-                  child: festival.bannerImagePath!.startsWith('data:image')
-                      ? Image.memory(
-                          base64Decode(festival.bannerImagePath!.split(',').last),
-                          fit: BoxFit.cover,
-                        )
-                      : (kIsWeb || festival.bannerImagePath!.startsWith('http'))
-                          ? Image.network(festival.bannerImagePath!, fit: BoxFit.cover)
-                          : Image.file(File(festival.bannerImagePath!), fit: BoxFit.cover),
+                  child: buildFestivalBannerImage(festival.bannerImagePath, fit: BoxFit.cover),
                 ),
               Container(
                 padding: const EdgeInsets.all(22),

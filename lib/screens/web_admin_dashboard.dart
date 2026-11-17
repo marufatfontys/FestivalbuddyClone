@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/festival_models.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
+import '../widgets/festival_banner_image.dart';
 
 class WebAdminDashboardScreen extends StatefulWidget {
   const WebAdminDashboardScreen({
@@ -462,14 +463,24 @@ class _WebAdminDashboardScreenState extends State<WebAdminDashboardScreen> {
                       final fest = festivals[idx];
                       return ListTile(
                         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                        leading: Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: fest.primaryColor.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(12),
+                        leading: ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: fest.bannerImagePath != null
+                                ? buildFestivalBannerImage(
+                                    fest.bannerImagePath,
+                                    fallbackWidget: Container(
+                                      color: fest.primaryColor.withValues(alpha: 0.2),
+                                      child: Icon(fest.coverIcon, color: fest.primaryColor),
+                                    ),
+                                  )
+                                : Container(
+                                    color: fest.primaryColor.withValues(alpha: 0.2),
+                                    child: Icon(fest.coverIcon, color: fest.primaryColor),
+                                  ),
                           ),
-                          child: Icon(fest.coverIcon, color: fest.primaryColor),
                         ),
                         title: Row(
                           children: [
@@ -614,6 +625,17 @@ class _WebAdminDashboardScreenState extends State<WebAdminDashboardScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (festival?.bannerImagePath != null) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: SizedBox(
+                        height: 140,
+                        width: double.infinity,
+                        child: buildFestivalBannerImage(festival!.bannerImagePath),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
                   TextField(
                     controller: nameCtrl,
                     decoration: const InputDecoration(labelText: 'Festival Name *'),

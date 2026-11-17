@@ -1,7 +1,4 @@
-import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/festival_models.dart';
 import '../services/app_state.dart';
@@ -11,6 +8,7 @@ import 'friends_chat_screen.dart';
 import 'organizer_studio_and_scanner.dart';
 import 'profile_security_screen.dart';
 import 'settings_personalize_sheet.dart';
+import '../widgets/festival_banner_image.dart';
 
 class MainShellScreen extends StatefulWidget {
   const MainShellScreen({
@@ -674,15 +672,21 @@ class _MainShellScreenState extends State<MainShellScreen> {
                   side: BorderSide(color: Colors.amber.withValues(alpha: 0.5)),
                 ),
                 child: ListTile(
+                  onTap: () => _openFestivalDetails(f),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  leading: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: Colors.amber.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(12),
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: buildFestivalBannerImage(
+                        f.bannerImagePath,
+                        fallbackWidget: Container(
+                          color: Colors.amber.withValues(alpha: 0.2),
+                          child: const Icon(Icons.hourglass_top_rounded, color: Colors.amber),
+                        ),
+                      ),
                     ),
-                    child: const Icon(Icons.hourglass_top_rounded, color: Colors.amber),
                   ),
                   title: Text(f.name, style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text(
@@ -738,14 +742,19 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 child: ListTile(
                   onTap: () => _openFestivalDetails(f),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  leading: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: f.primaryColor.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(12),
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: buildFestivalBannerImage(
+                        f.bannerImagePath,
+                        fallbackWidget: Container(
+                          color: f.primaryColor.withValues(alpha: 0.2),
+                          child: Icon(f.coverIcon, color: f.primaryColor),
+                        ),
+                      ),
                     ),
-                    child: Icon(f.coverIcon, color: f.primaryColor),
                   ),
                   title: Row(
                     children: [
@@ -1063,32 +1072,14 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 fit: StackFit.expand,
                 children: [
                   if (festival.bannerImagePath != null)
-                    festival.bannerImagePath!.startsWith('data:image')
-                        ? Image.memory(
-                            base64Decode(festival.bannerImagePath!.split(',').last),
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) => Container(
-                              color: festival.primaryColor.withValues(alpha: 0.3),
-                              child: Icon(festival.coverIcon, color: festival.primaryColor, size: 40),
-                            ),
-                          )
-                        : (kIsWeb || festival.bannerImagePath!.startsWith('http'))
-                            ? Image.network(
-                                festival.bannerImagePath!,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) => Container(
-                                  color: festival.primaryColor.withValues(alpha: 0.3),
-                                  child: Icon(festival.coverIcon, color: festival.primaryColor, size: 40),
-                                ),
-                              )
-                            : Image.file(
-                                File(festival.bannerImagePath!),
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) => Container(
-                                  color: festival.primaryColor.withValues(alpha: 0.3),
-                                  child: Icon(festival.coverIcon, color: festival.primaryColor, size: 40),
-                                ),
-                              )
+                    buildFestivalBannerImage(
+                      festival.bannerImagePath,
+                      fit: BoxFit.cover,
+                      fallbackWidget: Container(
+                        color: festival.primaryColor.withValues(alpha: 0.3),
+                        child: Icon(festival.coverIcon, color: festival.primaryColor, size: 40),
+                      ),
+                    )
                   else
                     Container(
                       decoration: BoxDecoration(
@@ -1419,14 +1410,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     children: [
                       if (fest.bannerImagePath != null)
                         Positioned.fill(
-                          child: fest.bannerImagePath!.startsWith('data:image')
-                              ? Image.memory(
-                                  base64Decode(fest.bannerImagePath!.split(',').last),
-                                  fit: BoxFit.cover,
-                                )
-                              : (kIsWeb || fest.bannerImagePath!.startsWith('http'))
-                                  ? Image.network(fest.bannerImagePath!, fit: BoxFit.cover)
-                                  : Image.file(File(fest.bannerImagePath!), fit: BoxFit.cover),
+                          child: buildFestivalBannerImage(fest.bannerImagePath, fit: BoxFit.cover),
                         ),
                       Container(
                         padding: const EdgeInsets.all(20),

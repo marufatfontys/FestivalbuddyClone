@@ -33,7 +33,7 @@ class ApiService {
       final request = http.MultipartRequest('POST', uri);
       request.files.add(await http.MultipartFile.fromPath('file', filePath));
       
-      final streamedResponse = await request.send().timeout(const Duration(seconds: 8));
+      final streamedResponse = await request.send().timeout(const Duration(seconds: 15));
       final response = await http.Response.fromStream(streamedResponse);
       
       if (response.statusCode == 200) {

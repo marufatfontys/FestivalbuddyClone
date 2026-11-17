@@ -1,5 +1,5 @@
+import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -7,6 +7,7 @@ import '../models/festival_models.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../services/sample_data.dart';
+import '../widgets/festival_banner_image.dart';
 
 // ============================================================================
 // 1. DEDICATED ORGANIZER "CREATE EVENT STUDIO" SCREEN (BOTTOM NAV TAB 2)
@@ -102,7 +103,12 @@ class _OrganizerCreateStudioScreenState
   Future<void> _pickBannerImage(ImageSource source) async {
     try {
       final picker = ImagePicker();
-      final img = await picker.pickImage(source: source, imageQuality: 80);
+      final img = await picker.pickImage(
+        source: source,
+        maxWidth: 1200,
+        maxHeight: 800,
+        imageQuality: 75,
+      );
       if (img != null && mounted) {
         setState(() {
           _customUploadedCoverPath = img.path;
@@ -140,10 +146,17 @@ class _OrganizerCreateStudioScreenState
     String? finalBannerPath = _customUploadedCoverPath;
     if (finalBannerPath != null &&
         !finalBannerPath.startsWith('http') &&
-        !finalBannerPath.startsWith('data:image')) {
+        !finalBannerPath.startsWith('data:')) {
+      // 1. Try uploading to backend image service
       final uploadedUrl = await ApiService.uploadImage(finalBannerPath);
-      if (uploadedUrl != null) {
+      if (uploadedUrl != null && uploadedUrl.isNotEmpty) {
         finalBannerPath = uploadedUrl;
+      } else {
+        // 2. Direct device Base64 fallback (ensures cross-device & web accessibility)
+        try {
+          final bytes = await File(finalBannerPath).readAsBytes();
+          finalBannerPath = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+        } catch (_) {}
       }
     }
 
@@ -455,9 +468,10 @@ class _OrganizerCreateStudioScreenState
                         SizedBox(
                           height: 150,
                           width: double.infinity,
-                          child: kIsWeb
-                              ? Image.network(_customUploadedCoverPath!, fit: BoxFit.cover)
-                              : Image.file(File(_customUploadedCoverPath!), fit: BoxFit.cover),
+                          child: buildFestivalBannerImage(
+                            _customUploadedCoverPath,
+                            fit: BoxFit.cover,
+                          ),
                         ),
                         Positioned(
                           top: 8,

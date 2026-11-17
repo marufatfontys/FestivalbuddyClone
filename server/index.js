@@ -245,6 +245,20 @@ async function ensureDbInitialized() {
         )
       `);
 
+      // Auto-repair any legacy octet-stream image data URLs to valid image/jpeg
+      try {
+        await dbRun(`
+          UPDATE pending_event_approvals 
+          SET bannerImagePath = REPLACE(bannerImagePath, 'data:application/octet-stream;', 'data:image/jpeg;')
+          WHERE bannerImagePath LIKE 'data:application/octet-stream;%'
+        `);
+        await dbRun(`
+          UPDATE published_events 
+          SET bannerImagePath = REPLACE(bannerImagePath, 'data:application/octet-stream;', 'data:image/jpeg;')
+          WHERE bannerImagePath LIKE 'data:application/octet-stream;%'
+        `);
+      } catch (_) {}
+
       // 6. Announcements Table
       await dbRun(`
         CREATE TABLE IF NOT EXISTS announcements (
@@ -412,7 +426,10 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
-  const mimeType = req.file.mimetype || 'image/jpeg';
+  let mimeType = req.file.mimetype || 'image/jpeg';
+  if (mimeType === 'application/octet-stream' || !mimeType.startsWith('image/')) {
+    mimeType = 'image/jpeg';
+  }
   const base64Data = req.file.buffer.toString('base64');
   const dataUrl = `data:${mimeType};base64,${base64Data}`;
 
