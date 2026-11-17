@@ -490,8 +490,9 @@ class _FestivalDetailScreenState extends State<FestivalDetailScreen>
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 36),
       children: [
-        // Flashy Hero Poster Banner
+        // Clean Hero Poster Banner Card
         Container(
+          height: 220,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(24),
             gradient: LinearGradient(
@@ -499,6 +500,13 @@ class _FestivalDetailScreenState extends State<FestivalDetailScreen>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
+            boxShadow: [
+              BoxShadow(
+                color: festival.primaryColor.withValues(alpha: 0.25),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
           ),
           clipBehavior: Clip.antiAlias,
           child: Stack(
@@ -507,144 +515,88 @@ class _FestivalDetailScreenState extends State<FestivalDetailScreen>
                 Positioned.fill(
                   child: buildFestivalBannerImage(festival.bannerImagePath, fit: BoxFit.cover),
                 ),
-              Container(
-                padding: const EdgeInsets.all(22),
-                decoration: BoxDecoration(
-                  gradient: festival.bannerImagePath != null
-                      ? LinearGradient(
-                          colors: [
-                            Colors.black.withValues(alpha: 0.75),
-                            Colors.black.withValues(alpha: 0.40),
-                          ],
-                          begin: Alignment.bottomCenter,
-                          end: Alignment.topCenter,
-                        )
-                      : null,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.45),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                festival.categoryLabel,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            if (recommendation != null)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.22),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Text(
-                                  '✨ ${recommendation.matchPercentage}% Match',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        // Organizer-only Change Banner Button
-                        if (widget.appState.activeRole == UserRole.organizer || widget.appState.activeRole == UserRole.admin)
-                          IconButton.filledTonal(
-                            tooltip: 'Upload / Change Festival Banner (Organizers Only)',
-                            style: IconButton.styleFrom(
-                              backgroundColor: Colors.black45,
-                              foregroundColor: Colors.white,
-                            ),
-                            icon: const Icon(Icons.add_photo_alternate_rounded, size: 18),
-                            onPressed: () async {
-                              final picker = ImagePicker();
-                              final img = await picker.pickImage(source: ImageSource.gallery);
-                              if (img != null) {
-                                widget.appState.updateFestivalBanner(festival.id, img.path);
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Festival banner updated successfully!'),
-                                      backgroundColor: Color(0xFF10B981),
-                                    ),
-                                  );
-                                }
-                              }
-                            },
-                          ),
+              // Subtle top vignette for contrast
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 70,
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.black.withValues(alpha: 0.55),
+                        Colors.transparent,
                       ],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
                     ),
-                    const SizedBox(height: 14),
-                    Text(
-                      festival.name,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 26,
-                        fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              // Top Overlay: Only Date (Top Left) & Organizer Banner Change Button (Top Right)
+              Positioned(
+                top: 14,
+                left: 14,
+                right: 14,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // Only Date appears on top left
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.65),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white24, width: 1),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      festival.tagline,
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.calendar_month_rounded,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          festival.dates,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        const Icon(
-                          Icons.location_on_rounded,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            '${festival.city} • ${festival.distanceKm} km away',
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.calendar_month_rounded, color: Colors.white, size: 14),
+                          const SizedBox(width: 6),
+                          Text(
+                            festival.dates,
                             style: const TextStyle(
                               color: Colors.white,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
+                    // Organizer-only Change Banner Button
+                    if (widget.appState.activeRole == UserRole.organizer || widget.appState.activeRole == UserRole.admin)
+                      IconButton.filledTonal(
+                        tooltip: 'Change Festival Banner',
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.black54,
+                          foregroundColor: Colors.white,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        icon: const Icon(Icons.photo_camera_rounded, size: 16),
+                        onPressed: () async {
+                          final picker = ImagePicker();
+                          final img = await picker.pickImage(
+                            source: ImageSource.gallery,
+                            maxWidth: 1200,
+                            maxHeight: 800,
+                            imageQuality: 75,
+                          );
+                          if (img != null) {
+                            widget.appState.updateFestivalBanner(festival.id, img.path);
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Festival banner updated successfully!'),
+                                  backgroundColor: Color(0xFF10B981),
+                                ),
+                              );
+                            }
+                          }
+                        },
+                      ),
                   ],
                 ),
               ),
@@ -654,83 +606,162 @@ class _FestivalDetailScreenState extends State<FestivalDetailScreen>
 
         const SizedBox(height: 16),
 
-        // Visual Eco & Visitor Perks Grid (Simple icons, no textbook SDG essays!)
+        // Festival Name, Music Genre, Location outside the card
         Text(
-          'Festival Perks & Green Commitments',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
+          festival.name,
+          style: const TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -0.4,
+          ),
         ),
-        const SizedBox(height: 10),
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
-          childAspectRatio: 2.4,
+        const SizedBox(height: 6),
+        Row(
           children: [
-            _perkTile(
-              icon: Icons.water_drop_rounded,
-              color: const Color(0xFF00E5FF),
-              title: '${festival.ecoCommitments.waterPointsCount} Free Water Taps',
-              subtitle: 'Chilled refill stations',
-              onTap: () => _showCommitmentDetailModal(
-                title: 'Free Fresh Drinking Water',
-                subtitle: '${festival.ecoCommitments.waterPointsCount} clean water taps located throughout the venue',
-                fullDetail: 'Organizers are legally bound to supply unlimited, clean, cold potable drinking water. '
-                    'All ${festival.ecoCommitments.waterPointsCount} refill points are clearly marked on your on-site companion map with 💧 badges and require zero queuing fees.',
-                icon: Icons.water_drop_rounded,
-                color: const Color(0xFF00E5FF),
-                sdgLabel: 'SDG 3: Good Health & Well-Being',
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
+              decoration: BoxDecoration(
+                color: festival.primaryColor.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                festival.categoryLabel,
+                style: TextStyle(
+                  color: festival.primaryColor,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
               ),
             ),
-            _perkTile(
-              icon: Icons.medical_services_rounded,
-              color: const Color(0xFFFF2E93),
-              title: 'First Aid & Chill Zone',
-              subtitle: '${festival.ecoCommitments.firstAidStationsCount} staffed tents',
-              onTap: () => _showCommitmentDetailModal(
-                title: 'Staffed First Aid & Sensory Chill Out',
-                subtitle: 'Safe, certified medical care and low-stimulation zones',
-                fullDetail: 'Includes ${festival.ecoCommitments.firstAidStationsCount} certified 24/7 Red Cross medical tents equipped with emergency defibrillators and certified doctors. '
-                    'Also includes shaded sensory-friendly quiet rest zones with comfortable seating and mental health stewards.',
-                icon: Icons.medical_services_rounded,
-                color: const Color(0xFFFF2E93),
-                sdgLabel: 'SDG 3 & 16: Safe & Inclusive Festivals',
-              ),
-            ),
-            _perkTile(
-              icon: Icons.local_drink_rounded,
-              color: const Color(0xFF10B981),
-              title: 'Reusable Cups Only',
-              subtitle: 'Zero single-use plastic',
-              onTap: () => _showCommitmentDetailModal(
-                title: '100% Circular Hard-Cup System',
-                subtitle: 'Zero disposable cups or single-use plastic items',
-                fullDetail: 'Every visitor receives a durable, washable hard cup upon arrival. '
-                    'Empty cups can be returned to any bar or return deposit machine for your token refund or a fresh, sanitized cup for your next drink, saving over 40,000 plastic cups per day.',
-                icon: Icons.local_drink_rounded,
-                color: const Color(0xFF10B981),
-                sdgLabel: 'SDG 12: Responsible Consumption',
-              ),
-            ),
-            _perkTile(
-              icon: Icons.directions_bus_rounded,
-              color: const Color(0xFFA855F7),
-              title: 'Free Shuttle & Bike Hub',
-              subtitle: 'Direct station link',
-              onTap: () => _showCommitmentDetailModal(
-                title: 'Zero-Emission Shuttles & Guarded Bike Hub',
-                subtitle: 'Sustainable transport from the nearest train station',
-                fullDetail: 'Electric shuttle buses run continuously between the local central train station and the festival gates every 10–15 minutes. '
-                    'Guarded, illuminated bicycle parking with free tire pumps and charging stations for e-bikes is provided right by the main festival entrance.',
-                icon: Icons.directions_bus_rounded,
-                color: const Color(0xFFA855F7),
-                sdgLabel: 'SDG 11 & 13: Green Mobility & Climate Action',
+            const SizedBox(width: 10),
+            const Icon(Icons.location_on_rounded, size: 15, color: Colors.grey),
+            const SizedBox(width: 3),
+            Expanded(
+              child: Text(
+                '${festival.city} • ${festival.distanceKm} km away',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
+        ),
+        if (festival.tagline.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            festival.tagline,
+            style: TextStyle(
+              fontSize: 13,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              height: 1.35,
+            ),
+          ),
+        ],
+
+        const SizedBox(height: 14),
+
+        // Sustainable Perks: Single horizontal side-scrollable row
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: Row(
+            children: [
+              _compactPerkChip(
+                icon: Icons.water_drop_rounded,
+                color: const Color(0xFF00E5FF),
+                label: 'Water Points',
+                onTap: () => _showCommitmentDetailModal(
+                  title: 'Free Fresh Drinking Water',
+                  subtitle: '${festival.ecoCommitments.waterPointsCount} clean water taps located throughout the venue',
+                  fullDetail: 'Organizers are legally bound to supply unlimited, clean, cold potable drinking water. '
+                      'All ${festival.ecoCommitments.waterPointsCount} refill points are clearly marked on your on-site companion map with 💧 badges and require zero queuing fees.',
+                  icon: Icons.water_drop_rounded,
+                  color: const Color(0xFF00E5FF),
+                  sdgLabel: 'SDG 3: Good Health & Well-Being',
+                ),
+              ),
+              const SizedBox(width: 8),
+              _compactPerkChip(
+                icon: Icons.medical_services_rounded,
+                color: const Color(0xFFFF2E93),
+                label: 'First Aid',
+                onTap: () => _showCommitmentDetailModal(
+                  title: 'Staffed First Aid & Sensory Chill Out',
+                  subtitle: 'Safe, certified medical care and low-stimulation zones',
+                  fullDetail: 'Includes ${festival.ecoCommitments.firstAidStationsCount} certified 24/7 Red Cross medical tents equipped with emergency defibrillators and certified doctors. '
+                      'Also includes shaded sensory-friendly quiet rest zones with comfortable seating and mental health stewards.',
+                  icon: Icons.medical_services_rounded,
+                  color: const Color(0xFFFF2E93),
+                  sdgLabel: 'SDG 3 & 16: Safe & Inclusive Festivals',
+                ),
+              ),
+              const SizedBox(width: 8),
+              _compactPerkChip(
+                icon: Icons.local_drink_rounded,
+                color: const Color(0xFF10B981),
+                label: 'Reusable Cups',
+                onTap: () => _showCommitmentDetailModal(
+                  title: '100% Circular Hard-Cup System',
+                  subtitle: 'Zero disposable cups or single-use plastic items',
+                  fullDetail: 'Every visitor receives a durable, washable hard cup upon arrival. '
+                      'Empty cups can be returned to any bar or return deposit machine for your token refund or a fresh, sanitized cup for your next drink, saving over 40,000 plastic cups per day.',
+                  icon: Icons.local_drink_rounded,
+                  color: const Color(0xFF10B981),
+                  sdgLabel: 'SDG 12: Responsible Consumption',
+                ),
+              ),
+              const SizedBox(width: 8),
+              _compactPerkChip(
+                icon: Icons.directions_bus_rounded,
+                color: const Color(0xFFA855F7),
+                label: 'Shuttle & Bikes',
+                onTap: () => _showCommitmentDetailModal(
+                  title: 'Zero-Emission Shuttles & Guarded Bike Hub',
+                  subtitle: 'Sustainable transport from the nearest train station',
+                  fullDetail: 'Electric shuttle buses run continuously between the local central train station and the festival gates every 10–15 minutes. '
+                      'Guarded, illuminated bicycle parking with free tire pumps and charging stations for e-bikes is provided right by the main festival entrance.',
+                  icon: Icons.directions_bus_rounded,
+                  color: const Color(0xFFA855F7),
+                  sdgLabel: 'SDG 11 & 13: Green Mobility & Climate Action',
+                ),
+              ),
+              if (festival.ecoCommitments.recyclingStations) ...[
+                const SizedBox(width: 8),
+                _compactPerkChip(
+                  icon: Icons.recycling_rounded,
+                  color: const Color(0xFF3B82F6),
+                  label: 'Recycling Hubs',
+                  onTap: () => _showCommitmentDetailModal(
+                    title: 'Waste Sorting & Circular Recycling',
+                    subtitle: 'Clean festival grounds with 100% waste recovery',
+                    fullDetail: 'Color-coded waste separation stations are located at every food court and stage exit, ensuring all plastic, organic waste, and cans are recycled.',
+                    icon: Icons.recycling_rounded,
+                    color: const Color(0xFF3B82F6),
+                    sdgLabel: 'SDG 12: Responsible Consumption',
+                  ),
+                ),
+              ],
+              if (festival.ecoCommitments.renewableEnergy) ...[
+                const SizedBox(width: 8),
+                _compactPerkChip(
+                  icon: Icons.bolt_rounded,
+                  color: const Color(0xFFFFB300),
+                  label: 'Solar & Green Power',
+                  onTap: () => _showCommitmentDetailModal(
+                    title: '100% Renewable Stage Power',
+                    subtitle: 'Solar battery arrays & fixed green grid connection',
+                    fullDetail: 'All stage sound systems and LED lighting rigs are powered entirely through renewable energy sources with zero diesel generator fumes.',
+                    icon: Icons.bolt_rounded,
+                    color: const Color(0xFFFFB300),
+                    sdgLabel: 'SDG 7 & 13: Clean Energy',
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
 
         const SizedBox(height: 16),
@@ -932,49 +963,35 @@ class _FestivalDetailScreenState extends State<FestivalDetailScreen>
     );
   }
 
-  Widget _perkTile({
+  Widget _compactPerkChip({
     required IconData icon,
     required Color color,
-    required String title,
-    required String subtitle,
+    required String label,
     required VoidCallback onTap,
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withValues(alpha: 0.3)),
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
         ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: color, size: 22),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 12.5,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(fontSize: 11),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+            Icon(icon, color: color, size: 16),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w700,
+                fontSize: 12.5,
               ),
             ),
-            Icon(Icons.touch_app_rounded, color: color.withValues(alpha: 0.6), size: 16),
           ],
         ),
       ),
