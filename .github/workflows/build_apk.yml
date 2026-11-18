@@ -42,10 +42,12 @@ jobs:
 
       - name: Publish Android APK to GitHub Releases
         uses: softprops/action-gh-release@v2
+        continue-on-error: true
         with:
-          tag_name: android-release-latest
-          name: "Festival Buddy Android APK (Latest)"
-          body: "🚀 Latest automated Android release build of Festival Buddy. Download `app-release.apk` below and install directly onto any Android phone."
+          tag_name: v1.0.0-android
+          target_commitish: ${{ github.sha }}
+          name: "Festival Buddy Android APK"
+          body: "🚀 Latest Android release build of Festival Buddy. Download `app-release.apk` below and install directly onto any Android phone."
           files: build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
